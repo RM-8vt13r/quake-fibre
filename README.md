@@ -3,8 +3,8 @@
 ## Description
 A toolbox to simulate optical fibre strain from earthquake tremors using the waveplate model.
 It models polarisation mode dispersion (PMD) as a constant differential group delay (DGD) along the fibre, and applies random rotations of the principal state of polarisation (PSP) after each correlation length.
-Earthquake seismograms are obtained through https requests to the [Syngine](https://ds.iris.edu/ds/products/syngine/) web service [Krischer:Jul17:Syngine].
-Resulting fibre strain is modelled as a change in DGD, as in [Awad:May24:environmental_surveillance_networks].
+Earthquake seismograms are obtained through https requests to the [Syngine](https://ds.iris.edu/ds/products/syngine/) web service [\[1\]](#1).
+Resulting fibre strain is modelled as a change in DGD, like in [\[2\]](#2).
 
 
 ## Demo
@@ -14,11 +14,19 @@ To install and use this project:
 1. Install [Python](https://www.python.org) or [Anaconda](https://www.anaconda.com).  
 2. Open a command line terminal in the directory of your project.  
 3. (Recommended) create a new virtual environment:  
-[venv](https://docs.python.org/3/library/venv.html): `python -m venv env`, `python3 -m venv env`, or `py -3 -m venv env` (depending on your OS and installation),  
-[Anaconda](https://www.anaconda.com/download): `conda create -n tremor-waveplate`.  
+   - [venv](https://docs.python.org/3/library/venv.html):  
+     `python -m venv env`,  
+     `python3 -m venv env`, or  
+     `py -3 -m venv env`  
+     (depending on your OS and Python installation).  
+   - [Anaconda](https://www.anaconda.com/download): `conda create -n tremor-waveplate`.  
 4. Activate the environment:  
-venv: `call env/Scripts/activate` on Windows or `source env/bin/activate` on Linux and MacOSX,  
-Anaconda: `conda activate tremor-waveplate`.  
+   - venv:  
+     `call env/Scripts/activate`
+     on Windows, or  
+     `source env/bin/activate`
+     on Linux and MacOSX.  
+   - Anaconda: `conda activate tremor-waveplate`.  
 5. Install this repository:  
 ```bat
 pip install https://gitlab.tue.nl/r.m.butler/tremor-waveplate-toolbox.git
@@ -26,6 +34,23 @@ pip install https://gitlab.tue.nl/r.m.butler/tremor-waveplate-toolbox.git
 6. All done!
 
 ## Usage
+
+## References
+<a name="1">\[1\]</a>
+L. Krischer, A. R. Hutko, M. van Driel, *et al.*,
+"On-demand custom broad-band synthetic seismograms,"
+*Seismol. Res. Lett.*,
+vol. 88, no. 4, pp. 1127--1140,
+Jul. 2017.
+DOI: [10.1785/0220160210](https://doi.org/10.1785/0220160210)
+
+<a name="2">\[2\]</a>
+H. Awad, F. Usmani, E. Virgillito, *et al.*,
+"Environmental surveillance through machine learning-empowered utilization of optical networks,"
+*Sens.*,
+vol. 24, no. 10, p. 3041,
+May 2024.
+DOI: [10.3390/s24103041](https://doi.org/10.3390/s24103041)
 
 ## Citation
 If you use this work, please cite
