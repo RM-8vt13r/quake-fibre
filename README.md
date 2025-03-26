@@ -40,7 +40,7 @@ pip install https://gitlab.tue.nl/r.m.butler/tremor-waveplate-toolbox.git
 L. Krischer, A. R. Hutko, M. van Driel, *et al.*,
 "On-demand custom broad-band synthetic seismograms,"
 *Seismol. Res. Lett.*,
-vol. 88, no. 4, pp. 1127--1140,
+vol. 88, no. 4, pp. 1127&ndash;1140,
 Jul. 2017.
 DOI: [10.1785/0220160210](https://doi.org/10.1785/0220160210)
 
