@@ -31,6 +31,10 @@ To install and use this project:
 ```bat
 pip install https://gitlab.tue.nl/r.m.butler/tremor-waveplate-toolbox.git
 ```  
+or, if you want to run unit tests from the 'tests' directory:
+```bat
+pip install https://gitlab.tue.nl/r.m.butler/tremor-waveplate-toolbox.git[testing]
+```  
 6. All done!
 
 ## Usage

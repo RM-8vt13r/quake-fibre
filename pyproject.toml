@@ -1,0 +1,63 @@
+[build-system]
+requires = ["hatchling >= 1.26"]
+build-backend = "hatchling.build"
+
+[project]
+name = "tremor-waveplate-toolbox"
+version = "2025.04.03"
+description = "Dual-polarisation transmission through an optical fibre undergoing earthquake perturbations."
+readme = {file = "README.md", content-type = "text/markdown"}
+
+authors = [
+    {name = "Rick M. Butler"}
+]
+maintainers = [
+    {name = "Rick M. Butler"}
+]
+
+keywords = [
+    "Waveplate",
+    "Optical fibre",
+    "Earthquake",
+    "Differential group delay",
+    "Polarisation mode dispersion",
+    "State of polarisation"
+]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Environment :: GPU :: NVIDIA CUDA",
+    "Intended Audience :: Information Technology",
+    "Intended Audience :: Science/Research",
+    "Intended Audience :: Telecommunications Industry",
+    "License :: OSI Approved :: MIT License",
+    "Natural Language :: English",
+    "Operating System :: MacOS",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Information Analysis",
+    "Topic :: Scientific/Engineering :: Physics"
+    ]
+
+license = "MIT"
+license-files = ["LICENSE"]
+
+requires-python = ">= 3.12"
+dependencies = [
+    "numpy",
+    "scipy"
+]
+
+[project.urls]
+Homepage = "https://gitlab.tue.nl/r.m.butler/tremor-waveplate-toolbox"
+Repository = "https://gitlab.tue.nl/r.m.butler/tremor-waveplate-toolbox"
+
+[project.optional-dependencies]
+cuda = [
+    "cupy"
+]
+
+testing = [
+    "pytest",
+    "matplotlib"
+]
