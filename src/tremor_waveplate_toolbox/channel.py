@@ -20,11 +20,11 @@ class Channel(ABC):
         """
         pass
 
-    def __call__(self, signal: Signal) -> Signal:
+    def __call__(self, signal: Signal, verbose: bool = False) -> Signal:
         """
         Make channel instances callable; see propagate()
         """
-        return self.propagate(signal)
+        return self.propagate(signal, verbose)
 
     @abstractmethod
     def propagate(self, signal: Signal) -> Signal:

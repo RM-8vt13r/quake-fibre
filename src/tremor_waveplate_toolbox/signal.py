@@ -19,7 +19,7 @@ class Signal:
         Create a new Signal.
 
         Inputs:
-        - samples [np.ndarray]: signal samples, shape [...,S,P] with arbitrary dimensions ..., sample count S, and principal polarisation components P = 2.
+        - samples [np.ndarray]: signal samples, shape [R,B,S,P] with fibre realisations R, batch size B, sample count S, and principal polarisation components P = 2.
         - sample_rate [float]: the sample frequency in Hz.
         - domain [Domain]: domain (time or frequency) in which samples is given.
         """
@@ -41,14 +41,14 @@ class Signal:
     @property
     def samples_t(self) -> np.ndarray:
         """
-        [np.ndarray] The signal samples, shape [... ,S,P] with arbitrary dimensions ..., sample count S, and principal polarisation components P=2.
+        [np.ndarray] The signal samples, shape [R,B,S,P] with fibre realisations R, batch size B, sample count S, and principal polarisation components P = 2.
         """
         return self._samples_t
 
     @samples_t.setter
     def samples_t(self, value):
         assert isinstance(value, np.ndarray), f"New samples must have type np.ndarray, but had {type(value)}"
-        assert len(value.shape) >= 2, f"New samples must have at least two dimensions S and P, but had only {len(value.shape)}"
+        assert len(value.shape) == 4, f"New samples must have four dimensions R, B, S and P, but had only {len(value.shape)}"
         assert value.shape[-1] == 2, f"New samples must have two polarisation components on the final dimension, but had {value.shape[-1]}"
         assert value.dtype in (complex, float, int), f"New samples must have datatype complex, but were {value.dtype}"
         self._samples_t = value.copy().astype(complex)
@@ -129,11 +129,22 @@ class Signal:
         """
         [np.ndarray] Vector with sample frequencies in Rad/s, corresponding to samples_f
         """
-        return 2 * np.pi * self.sample_time * self.f
+        return 2 * np.pi * self.f
 
     @w.setter
     def w(self, value):
         raise AttributeError(f"w cannot be set directly; set sample_time or sample_rate instead")
+
+    @property
+    def w_digital(self) -> np.ndarray:
+        """
+        [np.ndarray] Vector with sample frequencies in Rad/sample, corresponding to samples_f
+        """
+        return self.sample_time * self.w
+
+    @w_digital.setter
+    def w_digital(self, value):
+        raise AttributeError(f"w_digital cannot be set directly; set sample_time or sample_rate instead")
 
     @property
     def shape(self) -> tuple:
@@ -149,7 +160,7 @@ class Signal:
     @property
     def energy(self) -> np.ndarray:
         """
-        [np.ndarray] Signal energy, shape [...] (see samples_t)
+        [np.ndarray] Signal energy, shape [R,B] (see samples_t)
         """
         return np.sum(np.linalg.norm(self.samples_t, axis = -1) ** 2, axis = -1)
 
@@ -160,7 +171,7 @@ class Signal:
     @property
     def power_dBm(self) -> np.ndarray:
         """
-        [np.ndarray] Signal power in dBm, shape [...] (see samples_t)
+        [np.ndarray] Signal power in dBm, shape [R,B] (see samples_t)
         """
         return 10 * np.log10(1000 * self.power_W)
 
@@ -171,7 +182,7 @@ class Signal:
     @property
     def power_W(self) -> float:
         """
-        [np.ndarray] Signal power in W, shape [...] (see samples_t)
+        [np.ndarray] Signal power in W, shape [R,B] (see samples_t)
         """
         return self.energy / self.shape[-2]
 

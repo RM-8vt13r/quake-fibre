@@ -37,10 +37,10 @@ def test_normalisation():
 
 def test_modulation():
     t = np.arange(Nsymb * upsample_factor) / sample_rate
-    samples = np.zeros((len(t), 2), dtype = float)
-    samples[::3 * upsample_factor, :] = np.sqrt(upsample_factor / 2) # Upsampled pulse train over two polarisations (* upsample_factor to keep power constant, / 2 for dual-polarisation)
-    samples[upsample_factor::3 * upsample_factor, :] = np.sqrt(upsample_factor / 2)
-    samples[2 * upsample_factor::3 * upsample_factor, :] = -np.sqrt(upsample_factor / 2)
+    samples = np.zeros((1, 1, len(t), 2), dtype = float)
+    samples[0, 0, ::3 * upsample_factor, :] = np.sqrt(upsample_factor / 2) # Upsampled pulse train over two polarisations (* upsample_factor to keep power constant, / 2 for dual-polarisation)
+    samples[0, 0, upsample_factor::3 * upsample_factor, :] = np.sqrt(upsample_factor / 2)
+    samples[0, 0, 2 * upsample_factor::3 * upsample_factor, :] = -np.sqrt(upsample_factor / 2)
 
     signal = Signal(
         samples = samples,

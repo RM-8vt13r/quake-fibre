@@ -6,4 +6,4 @@ from .signal import Signal
 from .transmitter import Transmitter
 from .pulse import Pulse, Sinc, SINC, RootRaisedCosine, RRCOS
 from .constellation import Constellation, BPSK, QPSK, PSK8, QAM4, QAM16, QAM64
-from .constants import Domain, PAULI_X, PAULI_Y, PAULI_Z, PAULI_VECTOR
+from .constants import Domain, PAULI_1, PAULI_2, PAULI_3, PAULI_VECTOR

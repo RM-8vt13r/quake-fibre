@@ -43,22 +43,20 @@ class Transmitter:
         Pulseshape and amplify a given sequence of symbols
 
         Inputs:
-        - symbols [np.ndarray]: the unit-power sequence of symbols to transmit, shape [B, S, 2] where B is the batch size, S the signal length, and the last dimension contains two polarisations.
+        - symbols [np.ndarray]: the unit-power sequence of symbols to transmit, shape [B,S,2] where B is batch size, S is the sequence length, and the last dimension indexes two orthogonal polarisations.
 
         Outputs:
-        - [Signal]: modulated symbols as a Signal
-        - [Signal]: the output signal
+        - [Signal]: modulated symbols as a Signal, shape [R,B,S,2]
+        - [Signal]: the output signal, shape [R,B,U*S,2] where R=1 is fibre realisations and U is the upsample factor (samples per symbol).
         """
-        assert len(symbols.shape) == 3 and symbols.shape[-1] == 2, f"Symbols must have shape [B, S, 2], but had shape {symbols.shape}."
-
         symbols = Signal(
-            samples = symbols,
+            samples = symbols[None],
             sample_rate = self.pulse.symbol_rate
         )
 
         # Upsample to sample space
         samples = Signal(
-            samples = np.zeros([symbols.shape[0], self.upsample_factor * symbols.shape[1], symbols.shape[2]]),
+            samples = np.zeros([*symbols.shape[:-2], self.upsample_factor * symbols.shape[-2], symbols.shape[-1]]),
             sample_rate = self.upsample_factor * self.pulse.symbol_rate
         )
         samples.samples_t[..., ::self.upsample_factor, :] = symbols.samples_t
@@ -71,20 +69,19 @@ class Transmitter:
 
         return symbols, samples
 
-    def transmit_random(self, batch_size: int, Nsymbols: int) -> Signal:
+    def transmit_random(self, shape: tuple) -> Signal:
         """
         Generate a random pulseshaped sequence.
 
         Inputs:
-        - batch_size [int]: the number of sequences to generate
-        - Nsymbols [int]: the number of symbols to generate
+        - shape [tuple]: the shape [B,S] in which to generate sequences, P = 2 is added at the end.
 
         Outputs:
-        - [Signal]: modulated symbols as a Signal
-        - [Signal]: the output signal
+        - [Signal]: modulated symbols as a Signal, shape [R,B,S,2]
+        - [Signal]: the output signal, shape [R,B,U*S,2]
         """
         # Sample symbol array from constellation
-        symbols = self.constellation([batch_size, Nsymbols, 2])
+        symbols = self.constellation((*shape, 2))
         return self.transmit_symbols(symbols)
 
     @property
