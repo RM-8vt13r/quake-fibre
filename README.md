@@ -28,14 +28,33 @@ To install and use this project:
      on Linux and MacOSX.  
    - Anaconda: `conda activate tremor-waveplate`.  
 5. Install this repository:  
-```bat
-pip install https://gitlab.tue.nl/r.m.butler/tremor-waveplate-toolbox.git
-```  
-or, if you want to run unit tests from the 'tests' directory:
-```bat
-pip install https://gitlab.tue.nl/r.m.butler/tremor-waveplate-toolbox.git[testing]
-```  
+   ```bat
+   pip install https://gitlab.tue.nl/r.m.butler/tremor-waveplate-   toolbox.git
+   ```  
+   or, if you want to run unit tests from the 'tests' directory (see [Testing and scripts](#testing_and_scripts)):
+   ```bat
+   pip install https://gitlab.tue.nl/r.m.butler/tremor-waveplate-   toolbox.git[testing]
+   ```  
 6. All done!
+
+## Testing and scripts
+To run scripts or unit tests from this project:  
+1. Follow steps 1-2 under [Installation](#installation).  
+2. Clone this repository:  
+   ```bat
+   git clone git@gitlab.tue.nl:r.m.butler/tremor-waveplate-toolbox.git
+   ```
+3. Move into the newly created project folder.  
+4. Follow steps 3-5 under [Installation](#installation).  
+   Make sure to install the 'testing' version.  
+5. To run scripts:  
+   ```bat
+   jupyter notebook scripts
+   ```
+6. To run unit tests:  
+   ```bat
+   pytest -s
+   ```
 
 ## Usage
 
