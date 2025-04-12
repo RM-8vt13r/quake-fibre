@@ -13,7 +13,7 @@ from .signal import Signal
 class Pulse(ABC):
     """
     An abstract class representing a pulseshape.
-    Create specific pulseshapes by subclassing this class and overriding the pulse() and/or pulse_f() methods.
+    Create specific pulseshapes by subclassing this class and overriding the pulse_time and/or pulse_frequency methods.
     """
     def __init__(self, symbol_rate: float, domain: Domain):
         """
@@ -71,7 +71,7 @@ class Pulse(ABC):
         - signal [Signal]: the pulse amplitude-modulated signal.
         """
         return Signal(
-            samples = signal.samples_f * self.pulse_f(signal.f)[*(len(signal.shape) - 2)*(None,), :, None] * np.sqrt(signal.sample_rate),
+            samples = signal.samples_frequency * self.pulse_frequency(signal.frequency)[None, None, :, None] * np.sqrt(signal.sample_rate),
             sample_rate = signal.sample_rate,
             domain = Domain.FREQUENCY
         )
@@ -80,28 +80,28 @@ class Pulse(ABC):
         raise NotImplementedError()
 
     @abstractmethod
-    def pulse_t(self, t: np.ndarray) -> np.ndarray:
+    def pulse_time(self, time: np.ndarray) -> np.ndarray:
         """
-        Generate the pulse in the time domain at the time values in array t.
+        Generate the pulse in the time domain at the time values in array time.
 
         Inputs:
-        - t [np.ndarray], dtype [float]: time vector in s, at which values to calculate the pulse.
+        - time [np.ndarray], dtype [float]: time vector in s, at which values to calculate the pulse.
 
         Outputs:
-        - [np.ndarray] pulse in the time domain at the times from t.
+        - [np.ndarray] pulse in the time domain at the times from time.
         """
         raise NotImplementedError
 
     @abstractmethod
-    def pulse_f(self, f: np.ndarray) -> np.ndarray:
+    def pulse_frequency(self, frequency: np.ndarray) -> np.ndarray:
         """
-        Generate the pulse in the frequency domain at the frequency values in array w.
+        Generate the pulse in the frequency domain at the frequency values in array frequency.
 
         Inputs:
-        - w [np.ndarray], dtype [float]: frequency vector in rad/s, at which values to calculate the pulse in the frequency domain.
+        - frequency [np.ndarray], dtype [float]: frequency vector in Hz, at which values to calculate the pulse in the frequency domain.
 
         Outputs:
-        - [np.ndarray] pulse in the frequency domain at the frequencies from w.
+        - [np.ndarray] pulse in the frequency domain at the frequencies from frequency.
         """
         raise NotImplementedError
 
@@ -169,18 +169,18 @@ class Sinc(Pulse):
         super().__init__(symbol_rate, Domain.FREQUENCY)
 
     @override
-    def pulse_t(self, t: np.ndarray) -> np.ndarray:
-        return np.sinc(t * self.symbol_rate) * np.sqrt(self.symbol_rate)
+    def pulse_time(self, time: np.ndarray) -> np.ndarray:
+        return np.sinc(time * self.symbol_rate) * np.sqrt(self.symbol_rate)
 
     @override
-    def pulse_f(self, f: np.ndarray) -> np.ndarray:
-        return np.where(np.abs(f) <= self.symbol_rate / 2, 1 / np.sqrt(self.symbol_rate), 0.)
+    def pulse_frequency(self, frequency: np.ndarray) -> np.ndarray:
+        return np.where(np.abs(frequency) <= self.symbol_rate / 2, 1 / np.sqrt(self.symbol_rate), 0.)
 
 class RootRaisedCosine(Pulse):
     """
     A root-raised cosine pulse
     """
-    def __init__(self, symbol_rate: float, rolloff):
+    def __init__(self, symbol_rate: float, rolloff: float):
         """
         Initialise the root-raised cosine pulse.
 
@@ -192,17 +192,17 @@ class RootRaisedCosine(Pulse):
         self.rolloff = rolloff
 
     @override
-    def pulse_t(self, w: np.ndarray) -> np.ndarray:
+    def pulse_time(self, time: np.ndarray) -> np.ndarray:
         raise NotImplementedError()
 
     @override
-    def pulse_f(self, f: np.ndarray) -> np.ndarray:
-        plateau_mask = np.abs(f) <= (1 - self.rolloff) * self.symbol_rate / 2
-        side_mask   = (np.abs(f) <= (1 + self.rolloff) * self.symbol_rate / 2) & (~plateau_mask)
+    def pulse_frequency(self, frequency: np.ndarray) -> np.ndarray:
+        plateau_mask = np.abs(frequency) <= (1 - self.rolloff) * self.symbol_rate / 2
+        side_mask   = (np.abs(frequency) <= (1 + self.rolloff) * self.symbol_rate / 2) & (~plateau_mask)
 
-        rcos = np.zeros_like(f, dtype = float)
+        rcos = np.zeros_like(frequency, dtype = float)
         rcos[plateau_mask] = 1
-        if np.sum(side_mask): rcos[side_mask] = (1 + np.cos(np.pi / (self.rolloff * self.symbol_rate) * (np.abs(f[side_mask]) - (1 - self.rolloff) * self.symbol_rate / 2))) / 2
+        if np.sum(side_mask): rcos[side_mask] = (1 + np.cos(np.pi / (self.rolloff * self.symbol_rate) * (np.abs(frequency[side_mask]) - (1 - self.rolloff) * self.symbol_rate / 2))) / 2
 
         rrcos = np.sqrt(rcos / self.symbol_rate)
 

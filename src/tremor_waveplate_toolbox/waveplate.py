@@ -39,9 +39,9 @@ class Waveplate(Channel):
         assert 'photoelasticity'   in parameters['FIBRE'], f"'photoelasticity' is missing from parameters section 'FIBRE'"
 
         self._section_length    = parameters.getfloat('FIBRE', 'section_length')
-        self._section_count     = parameters.getint('FIBRE', 'section_count')
+        self._section_count     = int(parameters.getfloat('FIBRE', 'section_count'))
         self._PMD_parameter     = parameters.getfloat('FIBRE', 'PMD_parameter')
-        self._realisation_count = parameters.getint('FIBRE', 'realisation_count')
+        self._realisation_count = int(parameters.getfloat('FIBRE', 'realisation_count'))
         self._photoelasticity   = parameters.getfloat('FIBRE', 'photoelasticity')
 
         self.init_DGD()
@@ -93,12 +93,13 @@ class Waveplate(Channel):
         Inputs:
         - signal [Signal]: the signal to propagate through the channel in the time domain, shape [...,S,P] with sample count S and principal polarisations P=2.
         - verbose [bool]: whether to show a progress bar
-        
+
         Outputs:
         - [Signal]: the output signal, shape [realisation_count,...,S,P] with number of realisations realisation_count
         """
-        samples_w = np.tile(signal.samples_w, (self.realisation_count, 1, 1, 1)) # Get signal samples in the frequency domain
-        w = signal.w[None, None] # Get sample frequencies in Rad/s
+        signal = signal.copy()
+        signal.samples_frequency = signal.samples_frequency * np.ones(shape = (self.realisation_count, 1, 1, 1), dtype = int)
+        frequency_angular = signal.frequency_angular[None, None]
 
         iterable = zip(self.section_DGD, self.section_SOP_rotation, self.section_optical_strain)
         if verbose:
@@ -108,18 +109,14 @@ class Waveplate(Channel):
         for section_DGD, section_SOP_rotation, section_optical_strain in iterable:
             # Apply section DGD
             section_DGD = section_DGD[:,None,None]
-            DGD = np.exp(-0.5j * section_DGD * (1 + section_optical_strain) * w * 1e-12) # [R, ..., 1] * [1, ..., S] = [R, ..., S]
-            samples_w[..., 0] *= DGD
-            samples_w[..., 1] *= np.conj(DGD)
+            DGD = np.exp(-0.5j * section_DGD * (1 + section_optical_strain) * frequency_angular * 1e-12) # [R, ..., 1] * [1, ..., S] = [R, ..., S]
+            signal.samples_frequency[..., 0] *= DGD
+            signal.samples_frequency[..., 1] *= np.conj(DGD)
 
             # Rotate PSP
-            samples_w = np.einsum('rpq,rbsq->rbsp', section_SOP_rotation, samples_w)
+            signal.samples_frequency = np.einsum('rpq,rbsq->rbsp', section_SOP_rotation, signal.samples_frequency)
 
-        return Signal(
-            samples = samples_w,
-            sample_rate = signal.sample_rate,
-            domain = Domain.FREQUENCY
-        )
+        return signal
 
     def PMD_jones(self, w: np.ndarray, verbose: bool = False) -> np.ndarray:
         """

@@ -30,7 +30,7 @@ class Transmitter:
         self.constellation   = parameters.get('TRANSCEIVER', 'constellation')
         self.pulse           = [parameters.get('TRANSCEIVER', 'pulse'), (parameters.getfloat('TRANSCEIVER', 'baud_rate'), parameters.getfloat('TRANSCEIVER', 'pulse_parameter'))]
         self.power_dBm       = parameters.getfloat('TRANSCEIVER', 'power')
-        self.upsample_factor = parameters.getint('TRANSCEIVER', 'upsample_factor')
+        self.upsample_factor = int(parameters.getfloat('TRANSCEIVER', 'upsample_factor'))
 
     def __call__(self, symbols: np.ndarray) -> Signal:
         """
@@ -59,10 +59,10 @@ class Transmitter:
             samples = np.zeros([*symbols.shape[:-2], self.upsample_factor * symbols.shape[-2], symbols.shape[-1]]),
             sample_rate = self.upsample_factor * self.pulse.symbol_rate
         )
-        samples.samples_t[..., ::self.upsample_factor, :] = symbols.samples_t
+        samples.samples_time[..., ::self.upsample_factor, :] = symbols.samples_time
 
         # Scale back to unit power after upsampling -> divide by 2 for dual-polarisation transmission -> scale to transmission power
-        samples.samples_t *= np.sqrt(self.upsample_factor * self.power_W / 2) # Maintain unit power after upsampling
+        samples.samples_time *= np.sqrt(self.upsample_factor * self.power_W / 2) # Maintain unit power after upsampling
 
         # Pulseshape
         samples = self.pulse(samples)
