@@ -8,6 +8,8 @@ Resulting fibre strain is modelled as a change in DGD, like in [\[2\]](#2).
 
 
 ## Demo
+After [installing the toolbox](testing-and-scripts), take a look at the notebooks in the `scripts' folder for demonstrations.
+
 
 ## Installation
 To install and use this project:  
@@ -49,6 +51,43 @@ To run scripts or unit tests from this project:
 
 
 ## Usage
+Take a look at the notebooks in the `scripts' folder for specific demonstrations.  
+After [installation](#installation), general usage looks like:
+```python
+from configparser import ConfigParser
+from tremor_waveplate_toolbox import Fibre, Transmitter, Receiver, Earthquake
+
+# Load predefined parameters describing a fibre and transceiver
+parameters = ConfigParser()
+parameters.read('config/parameters.ini')
+
+# Create a transmitter, and generate a signal
+transmitter = Transmitter(parameters)
+transmitted_symbols, transmitted_signal = transmitter.transmit_random(shape = (
+    parameters.getint('SIGNAL', 'batch_size'),
+    int(parameters.getfloat('SIGNAL', 'symbol_count'))
+))
+
+# Create an optical fibre model, and transmit the signal
+fibre = Fibre(parameters)
+received_signal = fibre(transmitted_signal, verbose = True)
+
+# Receive the signal
+receiver = Receiver(parameters)
+received_symbols = receiver(received_signal)
+
+
+# Create an earthquake, and measure strain along the fibre link
+earthquake = Earthquake(
+    event = 'GCMT:C201002270634A',
+    model = 'ak135f_5s'
+)
+time, _, _, _, _, strain = \
+    earthquake(fibre, verbose = True)
+
+# Effects of the earthquake on the fibre propagation will be included in the near future
+'''
+
 
 ## References
 <a name="1">\[1\]</a>
@@ -71,17 +110,30 @@ DOI: [10.3390/s24103041](https://doi.org/10.3390/s24103041)
 ## Citation
 If you use this work, please cite
 ```bibtex
-@article{da_Silva:Jun24:OptiCommPy,
-    author={da Silva, Edson Porto and Herbster, Adolfo Fernandes},
-    title={{OptiCommPy}: Open-source Simulation of Fiber Optic Communications with {Python}},
-    journal={J. Open Source Softw.},
-    year={2024},
+@article{Krischer:Jul17:Syngine,
+    author={Krischer, Lion and Hutko, Alexander R. and van Driel, Martin and St\"ahlar, Simon and Bahavar, Manochehr and Trabant, Chad and Nissen-Meyer, Tarje},
+    title={On-Demand Custom Broadband Synthetic Seismograms},
+    journal={Seismol. Res. Lett.},
+    year={2017},
+    month={07},
+    volume={88},
+    number={4},
+    pages={1127--1140},
+    publisher={Seismological Society of America},
+    doi={10.1785/0220160210}
+}
+
+@article{Mecozzi:Jun21:polarization_sensing_submarine,
+    author={Mecozzi, Antonio and Cantono, Mattia and Castellanos, Jorge C. and Kamalov, Valey and Muller, Rafael and Zhan, Zhongwen},
+    title={Polarization Sensing using Submarine Optical Cables},
+    journal={Opt.},
+    year={2021},
     month={06},
-    volume={9},
-    number={98},
-    pages={6600},
-    publisher={Open Journals},
-    doi={10.21105/joss.06600}
+    volume={8},
+    number={6},
+    pages={788--795},
+    publisher={Optica Publishing Group},
+    doi={10.1364/OPTICA.424307}
 }
 
 @article{Awad:May24:environmental_surveillance_networks,
@@ -97,17 +149,17 @@ If you use this work, please cite
     doi={10.3390/s24103041}
 }
 
-@article{Krischer:Jul17:Syngine,
-    author={Krischer, Lion and Hutko, Alexander R. and van Driel, Martin and St\"ahlar, Simon and Bahavar, Manochehr and Trabant, Chad and Nissen-Meyer, Tarje},
-    title={On-Demand Custom Broadband Synthetic Seismograms},
-    journal={Seismol. Res. Lett.},
-    year={2017},
-    month={07},
-    volume={88},
-    number={4},
-    pages={1127--1140},
-    publisher={Seismological Society of America},
-    doi={10.1785/0220160210}
+@article{Butler::earthquake_PMD_modelling,
+    author={Butler, Rick Maarten and Kasaneva, Jos\'e N\'u\~nez and H\"ager, Christian and Alvarado, Alex},
+    title={Modelling Polarisation Birefringence under Seismic Strain},
+    journal={Nature of course},
+    year={},
+    month={},
+    volume={},
+    number={},
+    pages={},
+    publisher={Springer},
+    doi={}
 }
 ```
 
