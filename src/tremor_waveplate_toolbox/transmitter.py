@@ -1,5 +1,5 @@
 """
-A class to transmit- and receive optical signals
+A class to transmit optical signals
 """
 
 from configparser import ConfigParser
@@ -61,7 +61,7 @@ class Transmitter:
         )
         samples.samples_time[..., ::self.upsample_factor, :] = symbols.samples_time
 
-        # Scale back to unit power after upsampling -> divide by 2 for dual-polarisation transmission -> scale to transmission power
+        # Scale back to unit power after upsampling -> scale to transmission power -> divide by 2 for dual-polarisation transmission
         samples.samples_time *= np.sqrt(self.upsample_factor * self.power_W / 2) # Maintain unit power after upsampling
 
         # Pulseshape
@@ -133,3 +133,16 @@ class Transmitter:
     def power_W(self, value):
         assert value > 0, f"Power in W must be positive, but was {value}"
         self.power_dBm = 10 * np.log10(1000 * value)
+
+    @property
+    def upsample_factor(self) -> int:
+        """
+        [int] the transmitted samples per symbol
+        """
+        return self._upsample_factor
+
+    @upsample_factor.setter
+    def upsample_factor(self, value):
+        assert isinstance(value, int), f"upsample_factor must be an integer, but had type {type(value)}"
+        assert value > 0, f"upsample_factor must be positive (>0), but was {value}"
+        self._upsample_factor = value

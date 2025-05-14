@@ -51,6 +51,14 @@ class Signal:
 
         self._domain = domain
 
+    def __eq__(self, other) -> bool:
+        other.to_domain(self.domain)
+        if np.allclose(self.samples, other.samples) and \
+            np.isclose(self.sample_rate, other.sample_rate):
+            return True
+        
+        return False
+
     @property
     def samples(self) -> np.ndarray:
         """

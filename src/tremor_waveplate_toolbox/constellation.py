@@ -88,7 +88,7 @@ class Constellation:
         coordinates, probabilities = value
 
         assert isinstance(coordinates, (np.ndarray, list, tuple)),   f"coordinates must be a np.ndarray, but was {type(coordinates)}"
-        coordinates = np.asarray(coordinates, copy = True)
+        coordinates = np.asarray(coordinates.copy())
         assert coordinates.dtype in (complex, float, int), f"coordinates must have dtype complex, but this was {coordinates.dtype}"
         coordinates = coordinates.astype(complex)
         assert len(coordinates.shape) == 1, f"coordinates must have a single dimension, but had {len(coordinates.shape)}"
