@@ -33,11 +33,11 @@ To install and use this project:
      `conda activate tremor-waveplate`.  
 5. Install this repository:  
    ```bat
-   pip install https://gitlab.tue.nl/r.m.butler/tremor-waveplate-toolbox.git
+   pip install git+https://gitlab.tue.nl/r.m.butler/tremor-waveplate-toolbox.git
    ```
-   or, if you want to run unit tests from the 'tests' directory (see [Testing and scripts](#testing_and_scripts)):  
+   or, if you want to run unit tests from the 'tests' directory and/or demos from the 'scripts' directory (see [Testing and scripts](#testing_and_scripts)):  
    ```bat
-   pip install https://gitlab.tue.nl/r.m.butler/tremor-waveplate-toolbox.git[testing]
+   pip install "tremor-waveplate-toolbox[testing] @ git+https://gitlab.tue.nl/r.m.butler/tremor-waveplate-toolbox.git"
    ```
 6. All done!
 
