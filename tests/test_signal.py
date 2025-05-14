@@ -36,3 +36,6 @@ def test_signal():
     assert signal.domain == Domain.TIME, f"Signal did not switch to time domain properly"
     assert not np.allclose(samples_time2, samples_frequency), f"Signal did not change samples on switch to time domain"
     assert np.allclose(samples_time1, samples_time2), f"Signal time-domain samples do not match samples before FFT pair"
+
+    signal2 = signal.copy()
+    assert signal == signal2, f"Signal copying was not successful"
