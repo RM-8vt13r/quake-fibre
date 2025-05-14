@@ -57,7 +57,7 @@ To run scripts or unit tests from this project:
 
 
 ## Usage
-Take a look at the notebooks in the `scripts' folder for specific demonstrations.  
+Take a look at the notebooks in the 'scripts' folder for specific demonstrations.  
 After [installation](#installation), general usage looks like:
 ```python
 from configparser import ConfigParser
@@ -165,8 +165,8 @@ If you use this work, please cite
 
 @article{Butler::earthquake_PMD_modelling,
     author={Butler, Rick Maarten and Kasaneva, Jos\'e N\'u\~nez and H\"ager, Christian and Alvarado, Alex},
-    title={Modelling Polarisation Birefringence under Seismic Strain},
-    journal={Nature of course},
+    title={Modelling Optical Fibre Birefringence under Seismic Strain},
+    journal={Nature},
     year={},
     month={},
     volume={},
