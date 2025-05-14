@@ -108,7 +108,7 @@ DOI: [10.1785/0220160210](https://doi.org/10.1785/0220160210)
 A. Mecozzi, M. Cantono, J.C. Castellanos, *et al.*,
 "Polarization Sensing using Submarine Optical Cables,"
 *Opt.*,
-vol. 8, no. 6, p. 788&ndash;795,
+vol. 8, no. 6, pp. 788&ndash;795,
 Jun. 2021.
 DOI: [10.1364/OPTICA.424307](https://doi.org/10.1364/OPTICA.424307)
 
@@ -116,7 +116,7 @@ DOI: [10.1364/OPTICA.424307](https://doi.org/10.1364/OPTICA.424307)
 H. Awad, F. Usmani, E. Virgillito, *et al.*,
 "Environmental surveillance through machine learning-empowered utilization of optical networks,"
 *Sens.*,
-vol. 24, no. 10, p. 3041,
+vol. 24, no. 10, pp. 3041,
 May 2024.
 DOI: [10.3390/s24103041](https://doi.org/10.3390/s24103041)
 
