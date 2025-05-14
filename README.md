@@ -21,18 +21,24 @@ To install and use this project:
      `python3 -m venv env`, or  
      `py -3 -m venv env`  
      (depending on your OS and Python installation).  
-   - [Anaconda](https://www.anaconda.com/download): `conda create -n tremor-waveplate`.  
+   - [Anaconda](https://www.anaconda.com/download):  
+     `conda create -n tremor-waveplate`.  
 4. Activate the environment:  
    - venv:  
      `call env/Scripts/activate`
      on Windows, or  
      `source env/bin/activate`
      on Linux and MacOSX.  
-   - Anaconda: `conda activate tremor-waveplate`.  
+   - Anaconda:  
+     `conda activate tremor-waveplate`.  
 5. Install this repository:  
-   `pip install https://gitlab.tue.nl/r.m.butler/tremor-waveplate-toolbox.git`  
-   or, if you want to run unit tests from the 'tests' directory (see [Testing and scripts](#testing_and_scripts)):
-   `pip install https://gitlab.tue.nl/r.m.butler/tremor-waveplate-toolbox.git[testing]`  
+   ```bat
+   pip install https://gitlab.tue.nl/r.m.butler/tremor-waveplate-toolbox.git
+   ```
+   or, if you want to run unit tests from the 'tests' directory (see [Testing and scripts](#testing_and_scripts)):  
+   ```bat
+   pip install https://gitlab.tue.nl/r.m.butler/tremor-waveplate-toolbox.git[testing]
+   ```
 6. All done!
 
 
