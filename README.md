@@ -92,7 +92,7 @@ time, _, _, _, _, strain = \
     earthquake(fibre, verbose = True)
 
 # Effects of the earthquake on the fibre propagation will be included in the near future
-'''
+```
 
 
 ## References
