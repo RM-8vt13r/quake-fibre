@@ -8,7 +8,7 @@ Resulting fibre strain is modelled as a change in DGD, like in [\[2\]](#2).
 
 
 ## Demo
-After [installing the toolbox](testing-and-scripts), take a look at the notebooks in the `scripts' folder for demonstrations.
+After [installing the toolbox](#testing-and-scripts), take a look at the notebooks in the `scripts' folder for demonstrations.
 
 
 ## Installation
