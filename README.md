@@ -4,7 +4,7 @@
 A toolbox to simulate optical fibre strain from earthquake tremors using the waveplate model.
 It models polarisation mode dispersion (PMD) as a constant differential group delay (DGD) along the fibre, and applies random rotations of the principal state of polarisation (PSP) after each correlation length.
 Earthquake seismograms are obtained through https requests to the [Syngine](https://ds.iris.edu/ds/products/syngine/) web service [\[1\]](#1).
-Resulting fibre strain is modelled as a change in DGD, like in [\[2\]](#2).
+Resulting fibre strain is modelled as a change in DGD, like in [\[2,](#2)[3\]](#3).
 
 
 ## Demo
@@ -105,6 +105,14 @@ Jul. 2017.
 DOI: [10.1785/0220160210](https://doi.org/10.1785/0220160210)
 
 <a name="2">\[2\]</a>
+A. Mecozzi, M. Cantono, J.C. Castellanos, *et al.*,
+"Polarization Sensing using Submarine Optical Cables,"
+*Opt.*,
+vol. 8, no. 6, p. 788&ndash;795,
+Jun. 2021.
+DOI: [10.1364/OPTICA.424307](https://doi.org/10.1364/OPTICA.424307)
+
+<a name="3">\[3\]</a>
 H. Awad, F. Usmani, E. Virgillito, *et al.*,
 "Environmental surveillance through machine learning-empowered utilization of optical networks,"
 *Sens.*,
