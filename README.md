@@ -31,21 +31,43 @@ To install and use this project:
      on Linux and MacOSX.  
    - Anaconda:  
      `conda activate tremor-waveplate`.  
-5. Install this repository:  
-   ```bat
-   pip install git+https://gitlab.tue.nl/r.m.butler/tremor-waveplate-toolbox.git
-   ```
-   or, if you want to run unit tests from the 'tests' directory and/or demos from the 'scripts' directory (see [Testing and scripts](#testing_and_scripts)):  
-   ```bat
-   pip install "tremor-waveplate-toolbox[testing] @ git+https://gitlab.tue.nl/r.m.butler/tremor-waveplate-toolbox.git"
-   ```
+5. Install this repository using..  
+   a. ..HTTPS.
+      This will require you to login using your GitLab credentials.
+      Note: you will probably need GitLab-specific credentials; a constitutional login might fail.  
+
+      ```bat
+      pip install git+https://gitlab.tue.nl/r.m.butler/tremor-waveplate-toolbox.git
+      ```
+      or, if you want to run unit tests from the 'tests' directory and/or demos from the 'scripts' directory (see [Testing and scripts](#testing_and_scripts)):  
+      ```bat
+      pip install "tremor-waveplate-toolbox[testing] @ git+https://gitlab.tue.nl/r.m.butler/tremor-waveplate-toolbox.git"
+      ```
+      
+   b. ..SSH.
+      This will require you to [setup a personal SSH key pair](https://docs.gitlab.com/user/ssh/) beforehand.
+      ```bat
+      pip install git+ssh://git@gitlab.tue.nl/r.m.butler/tremor-waveplate-toolbox.git
+      ```
+      or, if you want to run unit tests from the 'tests' directory and/or demos from the 'scripts' directory (see [Testing and scripts](#testing_and_scripts)):  
+      ```bat
+      pip install "tremor-waveplate-toolbox[testing] @ git+ssh://git@gitlab.tue.nl/r.m.butler/tremor-waveplate-toolbox.git"
+      ```
 6. All done!
 
 
 ## Testing and scripts
 To run scripts or unit tests from this project:  
-1. Clone this repository:  
-   `git clone git@gitlab.tue.nl:r.m.butler/tremor-waveplate-toolbox.git`  
+1. Clone this repository using..  
+   a. ..HTTPS:  
+   ```bat
+   git clone https://gitlab.tue.nl/r.m.butler/tremor-waveplate-toolbox.git
+   ```  
+   b. ..SSH:
+   ```bat
+   git clone git@gitlab.tue.nl:r.m.butler/tremor-waveplate-toolbox.git
+   ```  
+   See step 5 of [Installation](#installation) for differences between HTTPS and SSH cloning.
 2. Move into the newly created project folder.  
 3. Follow steps 1-5 under [Installation](#installation).  
    Make sure to install the 'testing' version.  
