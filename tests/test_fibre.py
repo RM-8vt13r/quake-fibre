@@ -11,25 +11,25 @@ import scipy as sp
 from tremor_waveplate_toolbox import Fibre, Transmitter
 
 parameters = ConfigParser()
-parameters["TRANSCEIVER"] = {
-    "constellation": "QPSK",  # The symbol constellation to use
-    "power": "2",             # Transmission power in dBm
-    "baud_rate": "1e6",       # Baud rate in symbols / s
-    "pulse": "RRCOS",         # Pulseshape, can be SINC or RRCOS, or define your own using the Pulse class
-    "pulse_parameter": "0.5", # Parameter to pass to the pulse constructor. For a RRCOS pulse, this is the rolloff factor
-    "upsample_factor": "4"    # Samples per symbol
+parameters['TRANSCEIVER'] = {
+    'constellation': 'QPSK',  # The symbol constellation to use
+    'power': '2',             # Transmission power in dBm
+    'baud_rate': '1e6',       # Baud rate in symbols / s
+    'pulse': 'RRCOS',         # Pulseshape, can be SINC or RRCOS, or define your own using the Pulse class
+    'pulse_parameter': '0.5', # Parameter to pass to the pulse constructor. For a RRCOS pulse, this is the rolloff factor
+    'upsample_factor': '4'    # Samples per symbol
 }
 
-parameters["FIBRE"] = {
-    "section_length": "0.1",     # Correlation length in km
-    "section_count": "1000",     # Number of fibre sections, each of which has length Lc
-    "PMD_parameter": "0.1",      # Polarisation mode dispersion parameter in ps / (km ^ 0.5)
-    "realisation_count": "1000", # Number of fibre realisations to simulate simultaneously
-    "photoelasticity": "0.1"     # Photoelasticity, which relates material strain to optical strain
+parameters['FIBRE'] = {
+    'section_length': '0.1',     # Correlation length in km
+    'section_count': '1000',     # Number of fibre sections, each of which has length Lc
+    'PMD_parameter': '0.1',      # Polarisation mode dispersion parameter in ps / (km ^ 0.5)
+    'realisation_count': '1000', # Number of fibre realisations to simulate simultaneously
+    'photoelasticity': '0.1'     # Photoelasticity, which relates material strain to optical strain
 }
 
-parameters["SIGNAL"] = {
-    "symbol_count": "1e2"
+parameters['SIGNAL'] = {
+    'symbol_count': '1e2'
 }
 
 parameters_geographic = copy.deepcopy(parameters)

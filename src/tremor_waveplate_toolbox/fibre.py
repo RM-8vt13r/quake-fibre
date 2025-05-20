@@ -273,7 +273,7 @@ class Fibre:
     @property
     def path_coordinates(self) -> np.ndarray:
         """
-        [np.ndarray] array of fibre path coordinates, shape [S+1, 2] where S is the number of path segments and the second dimension contains longitude, latitude
+        [np.ndarray] array of fibre path segment endpoint coordinates, shape [S+1, 2] where S is the number of path segments and the second dimension contains longitude, latitude
         """
         if self._path_coordinates is not None:
             return self._path_coordinates
@@ -281,7 +281,7 @@ class Fibre:
 
     @path_coordinates.setter
     def path_coordinates(self, value):
-        raise AttributeError("The path coordinates path_coordinates cannot be changed after instantiation of the Fibre")
+        raise AttributeError("The path endpoint coordinates path_coordinates cannot be changed after instantiation of the Fibre")
 
     @property
     def path_lengths(self) -> np.ndarray:
@@ -307,7 +307,18 @@ class Fibre:
 
     @path_positions.setter
     def path_positions(self, value):
-        raise AttributeError("The path positions path_positions cannot be changed after instantiation of the Fibre")
+        raise AttributeError("The path segment endpoint positions path_positions cannot be changed after instantiation of the Fibre")
+
+    @property
+    def path_centre_positions(self):
+        """
+        [np.ndarray] array of accumulative fibre path segment lengths in km measured at each segment centre, shape [S, 2] where S is the number of path segments
+        """
+        return (self.path_positions[:-1] + self.path_positions[1:]) / 2
+
+    @path_centre_positions.setter
+    def path_centre_positions(self, value):
+        raise AttributeError("The path centre positions path_positions cannot be changed after instantiation of the Fibre")
 
     @property
     def section_coordinates(self) -> np.ndarray:
@@ -342,7 +353,18 @@ class Fibre:
 
     @section_positions.setter
     def section_positions(self, value):
-        raise AttributeError("The section positions section_positions cannot be changed after instantiation of the Fibre")
+        raise AttributeError("The section endpoint positions section_positions cannot be changed after instantiation of the Fibre")
+
+    @property
+    def section_centre_positions(self) -> np.ndarray:
+        """
+        [np.ndarray] array of accumulative fibre correlation lengths in km measured at each section centre, shape [S, 2] where S is the number of fibre sections
+        """
+        return (self.section_positions[:-1] + self.section_positions[1:]) / 2
+
+    @section_centre_positions.setter
+    def section_centre_positions(self, value):
+        raise AttributeError("The section centre positions section_positions cannot be changed after instantiation of the Fibre")
 
     @property
     def section_count(self) -> int:

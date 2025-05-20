@@ -1,6 +1,8 @@
 """
 A class that simulates earthquakes along an optical fibre using Syngine
 """
+from configparser import ConfigParser
+
 import numpy as np
 import obspy as op
 import obspy.clients.syngine
@@ -9,29 +11,29 @@ from obspy.clients.base import ClientHTTPException
 from tremor_waveplate_toolbox import Fibre
 
 class Earthquake:
-    def __init__(self, event: str, model: str = 'ak135f_5s'):
+    def __init__(self, parameters: ConfigParser): # event: str, model: str = 'ak135f_5s'):
         """
         Initialise the earthquake
 
-        Inputs:
+        Required entries in parameters['EARTHQUAKE']:
         - event [str]: Identifier of a historic earthquake event, e.g. from https://www.globalcmt.org/ or another database. Structure is <catalog>:<identifier>. Example: 'GCMT:C201002270634A' refers to the event at https://ds.iris.edu/spud/momenttensor/987510
         - model [str]: Earth model for Syngine to use from https://ds.iris.edu/ds/products/syngine/#earth. The model dictates at what depth seismograms are synthesised (usually the ocean floor or surface)
         """
-        assert isinstance(event, str), f"event must be str, but was {type(event)}"
-        assert ':' in event, "event must contain a ':', but doesn't"
-        assert isinstance(model, str), f"model must be str, but was {type(model)}"
+        assert 'EARTHQUAKE' in parameters, "Parameters are missing section 'EARTHQUAKE'"
+        assert 'event' in parameters['EARTHQUAKE'], "'event' is missing from parameters section 'EARTHQUAKE'."
+        assert 'model' in parameters['EARTHQUAKE'], "'model' is missing from parameters section 'EARTHQUAKE'."
 
-        self._event = event
-        self._model = model
+        self._event = parameters.get('EARTHQUAKE', 'event')
+        self._model = parameters.get('EARTHQUAKE', 'model')
 
         self._syngine_client = op.clients.syngine.Client() # Client to request seismograms from the Syngine webservice
 
         try:
             self.request_seismogram(0, 0)
         except ClientHTTPException as e:
-            if 'HTTP code 400' in e.message():
+            if 'HTTP code 400' in str(e):
                 raise ValueError(f"Earth model {self.model} is not known by Syngine; look at https://ds.iris.edu/ds/products/syngine/#earth for available models")
-            elif 'HTTP code 204' in e.message():
+            elif 'HTTP code 204' in str(e):
                 raise ValueError(f"Earthquake event {self.event} is not known by Syngine; look at https://ds.iris.edu/spud/momenttensor for available events")
             else:
                 raise e
@@ -64,7 +66,7 @@ class Earthquake:
                 eventid = self.event
             )
         except ClientHTTPException as e:
-            if 'HTTP code 404' in e.message():
+            if 'HTTP code 404' in str(e):
                 raise ValueError(f"Syngine can currently not be reached; try again later")
             else:
                 raise e
@@ -184,7 +186,7 @@ class Earthquake:
         directions = np.diff(fibre.section_coordinates, axis = 0)
         displacements = np.block([
             [displacements_longitude[:-1, :, None, None], displacements_latitude[:-1, :, None, None]],
-            [displacements_longitude[1:, :, None, None],  displacements_latitude[1:, :, None, None] ]
+            [displacements_longitude[1:,  :, None, None], displacements_latitude[1:,  :, None, None]]
         ])
 
         displacements_projected = np.sum(displacements * directions[:, None, None], axis = 3) / np.linalg.norm(directions, axis = 1)[:, None, None]
