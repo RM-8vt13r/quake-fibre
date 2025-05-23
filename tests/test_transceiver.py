@@ -27,7 +27,7 @@ parameters['SIGNAL'] = {
 
 def test_transmitter():
     transmitter = Transmitter(parameters)
-    symbols, signal = transmitter.transmit_random((parameters.getint('SIGNAL', 'batch_size'), int(parameters.getfloat('SIGNAL', 'symbol_count'))))
+    symbols, signal = transmitter.transmit_random(parameters.getint('SIGNAL', 'batch_size'), int(parameters.getfloat('SIGNAL', 'symbol_count')))
     assert symbols.shape == (1, parameters.getint('SIGNAL', 'batch_size'), int(parameters.getfloat('SIGNAL', 'symbol_count')), 2), f"Transmitted symbols shape should be [R (1), B ({parameters.getint('SIGNAL', 'batch_size')}), S ({int(parameters.getfloat('SIGNAL', 'symbol_count'))}), P (2)], but was {symbols.shape}"
     assert signal.shape == (1, parameters.getint('SIGNAL', 'batch_size'), int(parameters.getfloat('SIGNAL', 'symbol_count')) * parameters.getint('TRANSCEIVER', 'upsample_factor'), 2), f"Transmitted signal shape should be [R (1), B ({parameters.getint('SIGNAL', 'batch_size')}), S ({int(parameters.getfloat('SIGNAL', 'symbol_count')) * parameters.getint('TRANSCEIVER', 'upsample_factor')}), P (2)], but was {signal.shape}"
     assert np.allclose(symbols.power_W, 2), f"Transmitted symbols should have power 2 (unit power per polarisation), but this was {symbols.power_W}W"
@@ -35,7 +35,7 @@ def test_transmitter():
 
 def test_receiver():
     transmitter = Transmitter(parameters)
-    symbols, signal = transmitter.transmit_random((parameters.getint('SIGNAL', 'batch_size'), int(parameters.getfloat('SIGNAL', 'symbol_count'))))
+    symbols, signal = transmitter.transmit_random(parameters.getint('SIGNAL', 'batch_size'), int(parameters.getfloat('SIGNAL', 'symbol_count')))
 
     receiver = Receiver(parameters)
     symbols_received = receiver(signal)

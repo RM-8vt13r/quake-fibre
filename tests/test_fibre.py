@@ -57,8 +57,8 @@ def test_fibre_propagation():
     assert np.all(channel.section_lengths == parameters.getfloat('FIBRE', 'section_length')), "All channel sections should have length section_length, but didn't"
     assert channel.section_count == parameters.getint('FIBRE', 'section_count'), f"Channel should have {parameters.getint('FIBRE', 'section_count')} sections, but had {channel.section_count}"
 
-    Tx = Transmitter(parameters)
-    _, signal = Tx.transmit_random((1, int(parameters.getfloat("SIGNAL", "symbol_count")),))
+    transmitter = Transmitter(parameters)
+    _, signal = transmitter.transmit_random(1, int(parameters.getfloat("SIGNAL", "symbol_count")))
 
     propagated_signal = channel(signal, True)
     assert np.allclose(signal.power_W, propagated_signal.power_W), f"Fibre did not retain signal energy"
@@ -134,8 +134,8 @@ def test_fibre_path():
     except AttributeError:
         raise AssertionError("Channel should contain path_coordinates, path_lengths, path_positions, and section_coordinates, but didn't")
 
-    Tx = Transmitter(parameters)
-    _, signal = Tx.transmit_random((1, int(parameters.getfloat("SIGNAL", "symbol_count")),))
+    transmitter = Transmitter(parameters)
+    _, signal = transmitter.transmit_random(1, int(parameters.getfloat("SIGNAL", "symbol_count")))
 
     propagated_signal = channel(signal, True)
     assert np.allclose(signal.power_W, propagated_signal.power_W), f"Fibre did not retain signal energy"

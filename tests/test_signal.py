@@ -22,8 +22,8 @@ parameters["SIGNAL"] = {
 }
 
 def test_signal():
-    Tx = Transmitter(parameters)
-    _, signal = Tx.transmit_random((1, int(parameters.getfloat("SIGNAL", "symbol_count")),))
+    transmitter = Transmitter(parameters)
+    _, signal = transmitter.transmit_random(1, int(parameters.getfloat("SIGNAL", "symbol_count")))
 
     samples_time1 = signal.samples_time.copy()
     power_time = signal.power_W
@@ -39,3 +39,10 @@ def test_signal():
 
     signal2 = signal.copy()
     assert signal == signal2, f"Signal copying was not successful"
+
+    signal2.resample(signal2.sample_rate * 10)
+    assert signal2.shape == signal.shape[:-2] + (signal.shape[-2] * 10, signal.shape[-1]), f"Expected signal length {signal2.shape[-2] * 10} after resampling, but got {signal.shape[-2]}"
+    
+    signal2.resample(signal.sample_rate)
+    assert signal2.shape == signal.shape, f"Expected signal length {signal.shape[-2]} after double resampling, but got {signal2.shape[-2]}"
+    assert np.allclose(signal2.samples_time, signal.samples_time), f"Double resampled signal does not match original signal"
