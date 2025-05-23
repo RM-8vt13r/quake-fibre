@@ -19,7 +19,7 @@ class Signal:
         Create a new Signal.
 
         Inputs:
-        - samples [np.ndarray]: signal samples, shape [R,B,S,P] with fibre realisations R, batch size B, sample count S, and principal polarisation components P = 2.
+        - samples [np.ndarray]: signal samples, shape [...,S,C] with arbitrary dimensions ..., sample count S, and component count C (e.g. 2 polarisations, 3 seismograms, etc).
         - sample_rate [float]: the sample frequency in Hz.
         - domain [Domain]: domain (time or frequency) in which samples is given.
         """
@@ -51,9 +51,31 @@ class Signal:
 
         self._domain = domain
 
+    def resample(self, new_sample_rate: float):
+        """
+        Change the sample rate whilst keeping signal duration constant.
+        Resamples the signal using zeropadding or truncation in the frequency domain.
+
+        Inputs:
+        - new_sample_rate [float]: The new sample rate.
+        """
+        old_sample_rate  = self.sample_rate
+        self.sample_rate = new_sample_rate
+
+        old_signal_length = self.shape[-2]
+        new_signal_length = round(self.shape[-2] * self.sample_rate / old_sample_rate)
+        
+        new_samples_frequency = np.zeros(shape = (*self.shape[:-2], new_signal_length, self.shape[-1]), dtype = complex)
+        sample_limit = int(min(old_signal_length, new_signal_length) / 2)
+        new_samples_frequency[..., :sample_limit, :]  = self.samples_frequency[..., :sample_limit, :]
+        new_samples_frequency[..., -sample_limit:, :] = self.samples_frequency[..., -sample_limit:, :]
+
+        self.samples_frequency = new_samples_frequency
+
     def __eq__(self, other) -> bool:
         other.to_domain(self.domain)
-        if np.allclose(self.samples, other.samples) and \
+        if self.samples.shape == other.samples.shape and \
+            np.allclose(self.samples, other.samples) and \
             np.isclose(self.sample_rate, other.sample_rate):
             return True
         
@@ -62,16 +84,16 @@ class Signal:
     @property
     def samples(self) -> np.ndarray:
         """
-        [np.ndarray] The signal samples in the current domain (time or frequency), shape [R,B,S,P] with fibre realisations R, batch size B, signal length S, and principal polarisation components P = 2.
+        [np.ndarray] The signal samples in the current domain (time or frequency), shape [...,S,C] with arbitrary dimensions ..., signal length S, and component count C (e.g. 2 polarisations, 3 seismograms, etc).
         """
         return self._samples
 
     @samples.setter
     def samples(self, value):
         assert isinstance(value, np.ndarray), f"New samples must have type np.ndarray, but had {type(value)}"
-        assert len(value.shape) == 4, f"New samples must have four dimensions R, B, S and P, but had only {len(value.shape)}"
-        assert value.shape[-1] == 2, f"New samples must have two polarisation components on the final dimension, but had {value.shape[-1]}"
+        assert len(value.shape) >= 2, f"New samples must have at least two dimensions ..., S and C, but had only {len(value.shape)}"
         assert value.dtype in (complex, float, int), f"New samples must have datatype complex, but were {value.dtype}"
+        # assert '_samples' not in self.__dir__() or self._samples.shape[:-2] + self._samples.shape[-1:] == value.shape[:-2] + value.shape[-1:], f"All new samples dimensions must match the previous samples except dimension -2, but their dimensions were {self._samples.shape} and {value.shape}"
         self._samples = value.copy().astype(complex)
 
     @property
@@ -90,7 +112,7 @@ class Signal:
     @property
     def samples_time(self) -> np.ndarray:
         """
-        [np.ndarray] The signal samples in the time domain, shape [R,B,S,P]
+        [np.ndarray] The signal samples in the time domain, shape [...,S,P]
         """
         self.to_domain(Domain.TIME)
         return self.samples
@@ -103,7 +125,7 @@ class Signal:
     @property
     def samples_frequency(self) -> np.ndarray:
         """
-        [np.ndarray] The signal samples in the frequency domain, shape [R,B,S,P]
+        [np.ndarray] The signal samples in the frequency domain, shape [...,S,P]
         """
         self.to_domain(Domain.FREQUENCY)
         return self.samples
@@ -123,7 +145,7 @@ class Signal:
     @sample_rate.setter
     def sample_rate(self, value):
         assert isinstance(value, (float, int)), f"New sample rate must have type float, but was {type(value)}"
-        assert value > 0, f"New sample rate must be larger than 0, ut was {type(value)}"
+        assert value > 0, f"New sample rate must be larger than 0, but was {type(value)}"
         self._sample_rate = float(value)
 
     @property
@@ -198,7 +220,7 @@ class Signal:
     @property
     def energy(self) -> np.ndarray:
         """
-        [np.ndarray] Signal energy, shape [R,B]
+        [np.ndarray] Signal energy, shape [...]
         """
         return np.sum(np.linalg.norm(self.samples, axis = -1) ** 2, axis = -1)
 
@@ -209,7 +231,7 @@ class Signal:
     @property
     def power_dBm(self) -> np.ndarray:
         """
-        [np.ndarray] Signal power in dBm, shape [R,B]
+        [np.ndarray] Signal power in dBm, shape [...]
         """
         return 10 * np.log10(1000 * self.power_W)
 
@@ -220,7 +242,7 @@ class Signal:
     @property
     def power_W(self) -> float:
         """
-        [np.ndarray] Signal power in W, shape [R,B]
+        [np.ndarray] Signal power in W, shape [...]
         """
         return self.energy / self.shape[-2]
 

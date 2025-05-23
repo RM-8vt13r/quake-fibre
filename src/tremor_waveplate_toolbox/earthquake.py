@@ -11,7 +11,7 @@ from obspy.clients.base import ClientHTTPException
 from tremor_waveplate_toolbox import Fibre
 
 class Earthquake:
-    def __init__(self, parameters: ConfigParser): # event: str, model: str = 'ak135f_5s'):
+    def __init__(self, parameters: ConfigParser):
         """
         Initialise the earthquake
 

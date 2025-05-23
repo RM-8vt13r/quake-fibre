@@ -133,11 +133,11 @@ class Fibre:
         Multiple fibre realisations are applied at once.
 
         Inputs:
-        - signal [Signal]: the signal to propagate through the channel in the time domain, shape [...,S,P] with sample count S and principal polarisations P=2.
+        - signal [Signal]: the signal to propagate through the channel in the time domain, shape [R,B,S,P] with number of realisations R or R = 1, batch size B, sample count S and principal polarisations P = 2.
         - verbose [bool]: whether to show a progress bar
 
         Outputs:
-        - [Signal]: the output signal, shape [realisation_count,...,S,P] with number of realisations realisation_count
+        - [Signal]: the output signal, shape [R,B,S,P]
         """
         signal = signal.copy()
         signal.samples_frequency = signal.samples_frequency * np.ones(shape = (self.realisation_count, 1, 1, 1), dtype = int)
@@ -154,8 +154,8 @@ class Fibre:
 
         for section_DGD, section_SOP_rotation, section_optical_strain in iterable:
             # Apply section DGD
-            section_DGD = section_DGD[:,None,None]
-            DGD = np.exp(-0.5j * section_DGD * (1 + section_optical_strain) * frequency_angular * 1e-12) # [R, ..., 1] * [1, ..., S] = [R, ..., S]
+            section_DGD = section_DGD[:, None, None]
+            DGD = np.exp(-0.5j * section_DGD * (1 + section_optical_strain) * frequency_angular * 1e-12)
             signal.samples_frequency[..., 0] *= DGD
             signal.samples_frequency[..., 1] *= np.conj(DGD)
 
@@ -173,7 +173,7 @@ class Fibre:
         - verbose [bool]: whether to show a progress bar
 
         Outputs:
-        - [np.ndarray]: Jones matrix of shape [realisation_count, W, 2, 2] where realisation_count is the number of fibre realisations and W is the length of w
+        - [np.ndarray]: Jones matrix of shape [R, W, 2, 2] where R is the number of fibre realisations and W is the length of w
         """
         assert len(w.shape) == 1, f"w should have one dimension, but had {len(w.shape)}"
 
@@ -438,7 +438,7 @@ class Fibre:
     @property
     def DGD(self) -> np.ndarray:
         """
-        Accumulated differential group delay in ps, shape [realisation_count] where realisation_count is the number of fibre realisations
+        Accumulated differential group delay in ps, shape [R] where R is the number of fibre realisations
         """
         w = np.array([-2e10, 2e10])
 

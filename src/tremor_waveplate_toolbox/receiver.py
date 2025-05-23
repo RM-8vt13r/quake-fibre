@@ -41,10 +41,10 @@ class Receiver:
         Attenuate, anti-aliasing filter, and downsample a given sequence of samples
 
         Inputs:
-        - samples [Signal]: the sequence of samples to receive, shape [B,S,2] where B is batch size, S is the sequence length, and the last dimension indexes two orthogonal polarisations.
+        - samples [Signal]: the sequence of samples to receive, shape [R,B,S,P] where R is the number of realisations, B is batch size, S is the sequence length, and P = 2 indexes two orthogonal polarisations.
 
         Outputs:
-        - [Signal]: received symbols as a Signal, shape [R,B,S,2]
+        - [Signal]: received symbols as a Signal, shape [R,B,S,P]
         """
         # Filter
         samples = self.filter(samples)

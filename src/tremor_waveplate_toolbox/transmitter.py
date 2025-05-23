@@ -43,12 +43,14 @@ class Transmitter:
         Pulseshape and amplify a given sequence of symbols
 
         Inputs:
-        - symbols [np.ndarray]: the unit-power sequence of symbols to transmit, shape [B,S,2] where B is batch size, S is the sequence length, and the last dimension indexes two orthogonal polarisations.
+        - symbols [np.ndarray]: the unit-power sequence of symbols to transmit, shape [B,S,P] where B is batch size, S is the sequence length, and P = 2 indexes two orthogonal polarisations.
 
         Outputs:
-        - [Signal]: modulated symbols as a Signal, shape [R,B,S,2]
-        - [Signal]: the output signal, shape [R,B,U*S,2] where R=1 is fibre realisations and U is the upsample factor (samples per symbol).
+        - [Signal]: modulated symbols as a Signal, shape [R,B,S,P]
+        - [Signal]: the output signal, shape [R,B,U*S,P] where R = 1 is fibre realisations and U is the upsample factor (samples per symbol).
         """
+        assert len(symbols.shape) == 3 and symbols.shape[-1] == 2, f"symbols should have shape [B,S,P] with P = 2, but had shape {symbols.shape}"
+
         symbols = Signal(
             samples = symbols[None],
             sample_rate = self.pulse.symbol_rate
@@ -69,19 +71,20 @@ class Transmitter:
 
         return symbols, samples
 
-    def transmit_random(self, shape: tuple) -> Signal:
+    def transmit_random(self, batch_size: int, symbol_count: int) -> Signal:
         """
         Generate a random pulseshaped sequence.
 
         Inputs:
-        - shape [tuple]: the shape [B,S] in which to generate sequences, P = 2 is added at the end.
+        - batch_size: the signal batch size B
+        - symbol_count: the number of symbols S per batch sample
 
         Outputs:
-        - [Signal]: modulated symbols as a Signal, shape [R,B,S,2]
+        - [Signal]: modulated symbols as a Signal, shape [R,B,S,P] with number of fibre realisations R = 1 and number of orthogonal polarisations P = 2
         - [Signal]: the output signal, shape [R,B,U*S,2]
         """
         # Sample symbol array from constellation
-        symbols = self.constellation((*shape, 2))
+        symbols = self.constellation((batch_size, symbol_count, 2))
         return self.transmit_symbols(symbols)
 
     @property

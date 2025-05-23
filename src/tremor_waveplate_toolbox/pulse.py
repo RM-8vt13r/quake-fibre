@@ -53,7 +53,7 @@ class Pulse(ABC):
         Convolve a signal with this pulse in the time domain.
 
         Inputs:
-        - signal [Signal]: the signal to modulate.
+        - signal [Signal]: the signal to modulate, shape [R,B,S,P] with number of fibre realisations R or R = 1, batch size B, number of samples S, and number of polarisations P = 2.
 
         Outputs:
         - signal [Signal]: the pulse amplitude-modulated signal.
@@ -65,7 +65,7 @@ class Pulse(ABC):
         Convolve a signal with this pulse in the frequency domain.
 
         Inputs:
-        - signal [Signal]: the signal to modulate.
+        - signal [Signal]: the signal to modulate, shape [R,B,S,P] with number of fibre realisations R or R = 1, batch size B, number of samples S, and number of polarisations P = 2.
 
         Outputs:
         - signal [Signal]: the pulse amplitude-modulated signal.
