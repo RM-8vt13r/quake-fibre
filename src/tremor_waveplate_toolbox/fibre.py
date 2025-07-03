@@ -284,6 +284,17 @@ class Fibre:
         raise AttributeError("The path endpoint coordinates path_coordinates cannot be changed after instantiation of the Fibre")
 
     @property
+    def path_centre_coordinates(self) -> np.ndarray:
+        """
+        [np.ndarray] array of fibre path segment midpoint coordinates, shape [S, 2]
+        """
+        return (self.path_coordinates[:-1] + self.path_coordinates[1:]) / 2
+
+    @path_centre_coordinates.setter
+    def path_centre_coordinates(self, value):
+        raise AttributeError("The path midpoint coordinates cannot be set directly")
+
+    @property
     def path_lengths(self) -> np.ndarray:
         """
         [np.ndarray] array of fibre path segment lengths in km, shape [S, 2] where S is the number of path segments
@@ -332,6 +343,17 @@ class Fibre:
     @section_coordinates.setter
     def section_coordinates(self, value):
         raise AttributeError("The section coordinates section_coordinates cannot be changed after instantiation of the Fibre")
+
+    @property
+    def section_centre_coordinates(self) -> np.ndarray:
+        """
+        [np.ndarray] array of fibre section midpoint coordinates, shape [S, 2]
+        """
+        return (self.section_coordinates[:-1] + self.section_coordinates[1:]) / 2
+
+    @section_centre_coordinates.setter
+    def section_centre_coordinates(self, value):
+        raise AttributeError("The section midpoint coordinates cannot be set directly")
 
     @property
     def section_lengths(self) -> np.ndarray:
