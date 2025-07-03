@@ -6,6 +6,7 @@ from configparser import ConfigParser
 import numpy as np
 import obspy as op
 import obspy.clients.syngine
+from obspy.geodetics.base import WGS84_A as earth_radius # m
 from obspy.clients.base import ClientHTTPException
 
 from tremor_waveplate_toolbox import Fibre
@@ -44,47 +45,6 @@ class Earthquake:
         """
         return self.request_fibre_section_projected_strain(fibre, verbose)
 
-    # def request_seismogram(self, longitude: float, latitude: float):
-    #     """
-    #     Request seismograms from Syngine at a single specified coordinate.
-
-    #     Inputs:
-    #     - longitude [float]: coordinate longitude
-    #     - latitude [float]: coordinate latitude
-        
-    #     Outputs:
-    #     - [np.ndarray] sample timestamps in s
-    #     - [np.ndarray] normal ground displacement over time in m
-    #     - [np.ndarray] longitude (east-west) ground displacement over time in m
-    #     - [np.ndarray] latitude (north-south) ground displacement over time in m
-    #     """
-    #     try:
-    #         syngine_stream = self._syngine_client.get_waveforms(
-    #             model = self.model,
-    #             receiverlongitude = longitude,
-    #             receiverlatitude = latitude,
-    #             eventid = self.event
-    #         )
-    #     except ClientHTTPException as e:
-    #         if 'HTTP code 404' in str(e):
-    #             raise ValueError(f"Syngine can currently not be reached; try again later")
-    #         else:
-    #             raise e
-    #     except ConnectionError as e:
-    #         raise ConnectionError("Syngine could not be reached; please check your internet connection")
-
-    #     assert syngine_stream[0].id.endswith('MXZ'), "syngine_stream trace 0 must represent normal displacement, but doesn't"
-    #     times = syngine_stream[0].times()
-    #     displacement_normal = syngine_stream[0].data
-    #     assert syngine_stream[1].id.endswith('MXN'), "syngine_stream trace 1 must represent north-south displacement, but doesn't"
-    #     assert syngine_stream[1].times().shape == times.shape and np.all(syngine_stream[1].times() == times), f"North-South trace times must be the same as Normal trace times, but weren't"
-    #     displacement_latitude = syngine_stream[1].data
-    #     assert syngine_stream[2].id.endswith('MXE'), "syngine_stream trace 1 must represent north-south displacement, but doesn't"
-    #     assert syngine_stream[2].times().shape == times.shape and np.all(syngine_stream[2].times() == times), f"East-West trace times must be the same as Normal and North-South trace times, but weren't"
-    #     displacement_longitude = syngine_stream[2].data
-
-    #     return times, displacement_normal, displacement_longitude, displacement_latitude
-
     def request_seismograms(self, longitudes: np.ndarray, latitudes: np.ndarray, verbose: bool = False):
         """
         Request seismograms from Syngine at specified coordinates.
@@ -103,34 +63,6 @@ class Earthquake:
         longitudes, latitudes = np.array(longitudes), np.array(latitudes)
         assert len(longitudes.shape) == 1, f"longitudes must have one dimension, but had {len(longitudes.shape)} ({longitudes.shape})"
         assert latitudes.shape == longitudes.shape, f"longitudes and latitudes must have the same shape, but had shapes {longitudes.shape} and {latitudes.shape}"
-
-        # coordinates_iterable = zip(longitudes, latitudes)
-        # if verbose:
-        #     from tqdm import tqdm
-        #     coordinates_iterable = tqdm(
-        #         coordinates_iterable,
-        #         total = len(longitudes),
-        #         desc  = "Requesting seismograms"
-        #     )
-        
-        # times = None
-        # displacements_normal    = []
-        # displacements_longitude = []
-        # displacements_latitude  = []
-        # for longitude, latitude in coordinates_iterable:
-        #     time, displacement_normal, displacement_longitude, displacement_latitude = self.request_seismogram(longitude, latitude)
-            
-        #     if times is None: times = time
-        #     else:
-        #         assert np.all(time == times), "Syngine returned different times vectors for different coordinates"
-            
-        #     displacements_normal.append(displacement_normal)
-        #     displacements_longitude.append(displacement_longitude)
-        #     displacements_latitude.append(displacement_latitude)
-
-        # displacements_normal    = np.array(displacements_normal)
-        # displacements_longitude = np.array(displacements_longitude)
-        # displacements_latitude  = np.array(displacements_latitude)
 
         if verbose: print(f"Requesting seismograms from Syngine at {len(longitudes)} coordinates along the fibre. This may take a while..")
         try:
@@ -185,7 +117,7 @@ class Earthquake:
 
         Outputs:
         - [np.ndarray] sample timestamps in s, length T
-        - [np.ndarray] normal ground displacement over time in m, shape [P+1, T] with number of path segments S
+        - [np.ndarray] normal ground displacement over time in m, shape [P+1, T] with number of path segments P
         - [np.ndarray] longitude (east-west) ground displacement over time in m, shape [P+1, T]
         - [np.ndarray] latitude (north-south) ground displacement over time in m, shape [P+1, T]
         """
@@ -223,21 +155,60 @@ class Earthquake:
         - [np.ndarray] projected ground displacement over time in m, shape [S, T, 2]; the last dimension distinguishes between section ends
         """
         times, displacements_normal, displacements_longitude, displacements_latitude = self.request_fibre_section_seismograms(fibre, verbose)
+
+        # Calculate Cartesian global fibre section direction vectors
+        section_endpoints_longitudes, section_endpoints_latitudes = fibre.section_coordinates.T
+        section_endpoints_global = earth_radius * np.array([
+            np.cos(section_endpoints_latitudes) * np.cos(section_endpoints_longitudes),
+            np.cos(section_endpoints_latitudes) * np.sin(section_endpoints_longitudes),
+            np.sin(section_endpoints_latitudes)
+        ]).T # [S+1, C = 3]
+
+        section_directions_global = section_endpoints_global[1:] - section_endpoints_global[:-1] # [S, G = 3]
+        section_directions_global /= np.linalg.norm(section_directions_global, axis = -1)[:, None]
+
+        # Calculate Cartesian global earthquake components
+        sin_long = np.sin(section_endpoints_longitudes)
+        sin_lat  = np.sin(section_endpoints_latitudes)
+        cos_long = np.cos(section_endpoints_longitudes)
+        cos_lat  = np.cos(section_endpoints_latitudes)
+        zeros    = np.zeros_like(sin_long)
+
+        axes_local = np.array([
+            [-sin_long, -sin_lat * cos_long, cos_lat * cos_long],
+            [ cos_long, -sin_lat * sin_long, cos_lat * sin_long],
+            [ zeros   ,  cos_lat           , sin_lat           ]
+        ]).transpose((2, 0, 1)) # [S+1, G, L = 3]
+
+        displacements_local = np.stack([
+            displacements_longitude,
+            displacements_latitude,
+            displacements_normal
+        ], axis = -1) # [S+1, T, L]
+
+        displacements_global = np.einsum('sgl,stl->stg', axes_local, displacements_local)
         
-        import pdb
-        pdb.set_trace()
+        # Project the earthquakes onto the fibre directions
+        displacements = np.stack([
+            displacements_global[:-1],
+            displacements_global[1:]
+        ], axis = 3) # [S, T, G, E = 2]
 
-        directions = np.diff(fibre.section_coordinates, axis = 0)
-        directions /= np.linalg.norm(directions, axis = 1)[:, None]
-
-        displacements = np.block([
-            [displacements_longitude[:-1, :, None, None], displacements_latitude[:-1, :, None, None]],
-            [displacements_longitude[1:,  :, None, None], displacements_latitude[1:,  :, None, None]]
-        ])
-
-        displacements_projected = np.sum(displacements * directions[:, None, None], axis = 3)
+        displacements_projected = np.einsum('stge,sg->ste', displacements, section_directions_global)
 
         return times, displacements_normal, displacements_longitude, displacements_latitude, displacements_projected
+
+        # directions = np.diff(fibre.section_coordinates, axis = 0)
+        # directions /= np.linalg.norm(directions, axis = 1)[:, None]
+
+        # displacements = np.block([
+        #     [displacements_longitude[:-1, :, None, None], displacements_latitude[:-1, :, None, None]],
+        #     [displacements_longitude[1:,  :, None, None], displacements_latitude[1:,  :, None, None]]
+        # ])
+
+        # displacements_projected = np.sum(displacements * directions[:, None, None], axis = 3)
+
+        # return times, displacements_normal, displacements_longitude, displacements_latitude, displacements_projected
 
     def request_fibre_section_projected_strain(self, fibre: Fibre, verbose: bool = False):
         """
@@ -257,9 +228,6 @@ class Earthquake:
         - [np.ndarray] projected material strain over time, shape [S, T]
         """
         times, displacements_normal, displacements_longitude, displacements_latitude, displacements_projected = self.request_fibre_section_projected_seismogram(fibre, verbose)
-
-        import pdb
-        pdb.set_trace()
 
         strains_projected = np.diff(displacements_projected, axis = 2)[:, :, 0] / (fibre.section_lengths[:, None] * 1000)
 
