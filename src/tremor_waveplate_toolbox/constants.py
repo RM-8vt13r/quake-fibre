@@ -12,6 +12,18 @@ Domain = Enum('Domain', [
     'FREQUENCY'
 ])
 
+# Devices
+Device = Enum('Device', [
+    'CPU',
+    'CUDA'
+])
+
+# DGD distributing methods
+Distribution = Enum('Distribution', [
+    'RANDOM',
+    'UNIFORM'
+])
+
 # Pauli spin matrices
 PAULI_1 = np.array([
     [1,  0],

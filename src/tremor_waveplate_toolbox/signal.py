@@ -1,10 +1,13 @@
 """
 A structure representing a signal.
 """
-
 import numpy as np
+try:
+    import cupy as cp
+except:
+    pass
 
-from .constants import Domain
+from .constants import Domain, Device
 
 class Signal:
     """
@@ -13,17 +16,21 @@ class Signal:
     def __init__(self,
             samples: np.ndarray,
             sample_rate: float,
-            domain: Domain = Domain.TIME
+            domain: Domain = Domain.TIME,
+            device: Device = Device.CPU
         ):
         """
         Create a new Signal.
 
         Inputs:
-        - samples [np.ndarray]: signal samples, shape [...,S,C] with arbitrary dimensions ..., sample count S, and component count C (e.g. 2 polarisations, 3 seismograms, etc).
+        - samples [np.ndarray] or [cp.ndarray]: signal samples, shape [...,S,C] with arbitrary dimensions ..., sample count S, and component count C (e.g. 2 polarisations, 3 seismograms, etc).
         - sample_rate [float]: the sample frequency in Hz.
         - domain [Domain]: domain (time or frequency) in which samples is given.
         """
+        assert isinstance(domain, Domain), f"domain must be a Domain, but was a {type(domain)}"
+        assert isinstance(device, Device), f"device must be a Device, but was a {type(device)}"
         self._domain = domain
+        self._device = device
         self.samples = samples
         self.sample_rate = sample_rate
 
@@ -45,9 +52,9 @@ class Signal:
 
         match domain:
             case Domain.TIME:
-                self.samples = np.fft.ifft(self.samples.copy(), axis = -2, norm = 'ortho')
+                self.samples = self.xp.fft.ifft(self.samples.copy(), axis = -2, norm = 'ortho')
             case Domain.FREQUENCY:
-                self.samples = np.fft.fft(self.samples.copy(), axis = -2, norm = 'ortho')
+                self.samples = self.xp.fft.fft(self.samples.copy(), axis = -2, norm = 'ortho')
 
         self._domain = domain
 
@@ -65,7 +72,7 @@ class Signal:
         old_signal_length = self.shape[-2]
         new_signal_length = round(self.shape[-2] * self.sample_rate / old_sample_rate)
         
-        new_samples_frequency = np.zeros(shape = (*self.shape[:-2], new_signal_length, self.shape[-1]), dtype = complex)
+        new_samples_frequency = self.xp.zeros(shape = (*self.shape[:-2], new_signal_length, self.shape[-1]), dtype = complex)
         sample_limit = int(min(old_signal_length, new_signal_length) / 2)
         new_samples_frequency[..., :sample_limit, :]  = self.samples_frequency[..., :sample_limit, :]
         new_samples_frequency[..., -sample_limit:, :] = self.samples_frequency[..., -sample_limit:, :]
@@ -74,27 +81,73 @@ class Signal:
 
     def __eq__(self, other) -> bool:
         other.to_domain(self.domain)
+        other.to_device(self.device)
         if self.samples.shape == other.samples.shape and \
-            np.allclose(self.samples, other.samples) and \
-            np.isclose(self.sample_rate, other.sample_rate):
+            self.xp.allclose(self.samples, other.samples) and \
+            self.xp.isclose(self.sample_rate, other.sample_rate):
             return True
         
         return False
 
+    def to_device(self, device: Device) -> None:
+        """
+        Move this signal into CPU or GPU memory.
+
+        Inputs:
+        - device [Device]: 'CPU' to put the signal onto the CPU and do calculations with numpy. 'CUDA' to put the signal onto a CUDA-enabled device and do calculations with cupy.
+        """
+        match device:
+            case Device.CPU:
+                self._device = device
+                self.samples = np.array(self.samples)
+
+            case Device.CUDA:
+                assert 'cp' in vars(), f"Cannot move signal onto GPU without CUDA-enabled installation (see installation instructions)"
+                self._device = device
+                self.samples = cp.array(self.samples)
+            
+            case _:
+                raise ValueError(f"device must be Device.CPU or Device.CUDA, but was {device}")
+    
+    @property
+    def device(self) -> Device:
+        """
+        Obtain the device on which the signal currently resides
+
+        Outputs:
+        - [Device] CPU or CUDA
+        """
+        return self._device
+
+    @device.setter
+    def device(self, value):
+        raise AttributeError("Cannot set device directly; use to_device instead.")
+
+    @property
+    def xp(self):
+        """
+        Return a reference to the numpy (np) or cupy (cp) module, depending on where the Signal currently resides.
+        """
+        return np if self.device == Device.CPU else cp
+
+    @xp.setter
+    def xp(self, value):
+        raise AttributeError("Cannot set xp directly; use to_device instead.")
+
     @property
     def samples(self) -> np.ndarray:
         """
-        [np.ndarray] The signal samples in the current domain (time or frequency), shape [...,S,C] with arbitrary dimensions ..., signal length S, and component count C (e.g. 2 polarisations, 3 seismograms, etc).
+        [np.ndarray, cp.ndarray] The signal samples in the current domain (time or frequency), shape [...,S,C] with arbitrary dimensions ..., signal length S, and component count C (e.g. 2 polarisations, 3 seismograms, etc).
         """
         return self._samples
 
     @samples.setter
     def samples(self, value):
-        assert isinstance(value, np.ndarray), f"New samples must have type np.ndarray, but had {type(value)}"
+        assert isinstance(value, (np.ndarray)) or ('cp' in vars() and isinstance(value, cp.ndarray)), f"New samples must have type np.ndarray or cp.ndarray (if cupy is available), but had {type(value)}"
         assert len(value.shape) >= 2, f"New samples must have at least two dimensions ..., S and C, but had only {len(value.shape)}"
         assert value.dtype in (complex, float, int), f"New samples must have datatype complex, but were {value.dtype}"
         # assert '_samples' not in self.__dir__() or self._samples.shape[:-2] + self._samples.shape[-1:] == value.shape[:-2] + value.shape[-1:], f"All new samples dimensions must match the previous samples except dimension -2, but their dimensions were {self._samples.shape} and {value.shape}"
-        self._samples = value.copy().astype(complex)
+        self._samples = self.xp.array(value.copy()).astype(complex)
 
     @property
     def domain(self) -> Domain:
@@ -106,13 +159,11 @@ class Signal:
     @domain.setter
     def domain(self, value: Domain):
         raise AttributeError("Cannot set domain directly; use to_domain instead.")
-        # assert isinstance(value, Domain), f"New domain must have type Domain, but had type {type(value)}"
-        # self._domain = value
 
     @property
     def samples_time(self) -> np.ndarray:
         """
-        [np.ndarray] The signal samples in the time domain, shape [...,S,P]
+        [np.ndarray, cp.ndarray] The signal samples in the time domain, shape [...,S,P]
         """
         self.to_domain(Domain.TIME)
         return self.samples
@@ -125,7 +176,7 @@ class Signal:
     @property
     def samples_frequency(self) -> np.ndarray:
         """
-        [np.ndarray] The signal samples in the frequency domain, shape [...,S,P]
+        [np.ndarray, cp.ndarray] The signal samples in the frequency domain, shape [...,S,P]
         """
         self.to_domain(Domain.FREQUENCY)
         return self.samples
@@ -162,9 +213,9 @@ class Signal:
     @property
     def time(self) -> np.ndarray:
         """
-        [np.ndarray] sample times in seconds.
+        [np.ndarray, cp.ndarray] sample times in seconds.
         """
-        return np.arange(self.shape[-2]) / self.sample_rate
+        return self.xp.arange(self.shape[-2]) / self.sample_rate
 
     @time.setter
     def time(self, value):
@@ -173,9 +224,9 @@ class Signal:
     @property
     def frequency(self) -> np.ndarray:
         """
-        [np.ndarray] Vector with sample frequencies in Hz, corresponding to samples_frequency
+        [np.ndarray, cp.ndarray] Vector with sample frequencies in Hz, corresponding to samples_frequency
         """
-        return np.fft.fftfreq(
+        return self.xp.fft.fftfreq(
             n = self.shape[-2],
             d = self.sample_time
         )
@@ -187,9 +238,9 @@ class Signal:
     @property
     def frequency_angular(self) -> np.ndarray:
         """
-        [np.ndarray] Vector with sample frequencies in Rad/s, corresponding to samples_frequency
+        [np.ndarray, cp.ndarray] Vector with sample frequencies in Rad/s, corresponding to samples_frequency
         """
-        return 2 * np.pi * self.frequency
+        return 2 * self.xp.pi * self.frequency
 
     @frequency_angular.setter
     def frequency_angular(self, value):
@@ -198,7 +249,7 @@ class Signal:
     @property
     def frequency_angular_digital(self) -> np.ndarray:
         """
-        [np.ndarray] Vector with sample frequencies in Rad/sample, corresponding to samples_frequency
+        [np.ndarray, cp.ndarray] Vector with sample frequencies in Rad/sample, corresponding to samples_frequency
         """
         return self.sample_time * self.frequency_angular
 
@@ -220,9 +271,9 @@ class Signal:
     @property
     def energy(self) -> np.ndarray:
         """
-        [np.ndarray] Signal energy, shape [...]
+        [np.ndarray, cp.ndarray] Signal energy, shape [...]
         """
-        return np.sum(np.linalg.norm(self.samples, axis = -1) ** 2, axis = -1)
+        return self.xp.sum(self.xp.linalg.norm(self.samples, axis = -1) ** 2, axis = -1)
 
     @energy.setter
     def energy(self, value):
@@ -231,9 +282,9 @@ class Signal:
     @property
     def power_dBm(self) -> np.ndarray:
         """
-        [np.ndarray] Signal power in dBm, shape [...]
+        [np.ndarray, cp.ndarray] Signal power in dBm, shape [...]
         """
-        return 10 * np.log10(1000 * self.power_W)
+        return 10 * self.xp.log10(1000 * self.power_W)
 
     @power_dBm.setter
     def power_dBm(self, value):
@@ -242,7 +293,7 @@ class Signal:
     @property
     def power_W(self) -> float:
         """
-        [np.ndarray] Signal power in W, shape [...]
+        [np.ndarray, cp.ndarray] Signal power in W, shape [...]
         """
         return self.energy / self.shape[-2]
 

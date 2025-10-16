@@ -1,23 +1,24 @@
 """
-An optical fibre channel model for dual-polarisation transmission.
-Currently it models only PMD effects: (earthquake-dependent) differential group delay and state of polarisation scramblers.
+An optical fibre channel model base class for dual-polarisation transmission.
 """
 
 from configparser import ConfigParser
 import json
+from abc import ABC, abstractmethod
 
 import numpy as np
-import scipy as sp
 import obspy as op
+import refractiveindex
 
-from .constants import PAULI_VECTOR, Domain
 from .signal import Signal
 
-class Fibre:
+class Fibre(ABC):
     """
-    A class representing an optical fibre.
-    Currently it consists only of the waveplate model, which applies differential group delay and rotates state of polarisation in a distributed manner.
-    Chromatic dispersion, the Kerr effect, attenuation, EDFA noise, polarisation-dependent loss is neglected, and slow PMD drift are not implemented.
+    A base class representing an optical fibre.
+    Currently it models only polarisation-mode dispersion using one of two methods:
+    - the coarse-step method, which applies differential group delay and scrambles the state of polarisation in a random and distributed manner.
+    - Marcuse's method, which was derived directly from the coupled nonlinear Schrödinger equation.
+    Chromatic dispersion, the Kerr effect, attenuation, EDFA noise, and polarisation-dependent loss are neglected, and slow PMD drift are not implemented.
     Earthquake strain can be modelled as a change in differential group delay.
     """
     def __init__(self, parameters: ConfigParser):
@@ -25,23 +26,34 @@ class Fibre:
         Instantiate multiple fibre channels for simultaneous propagation.
 
         Required entries in parameters['FIBRE']:
-        - section_length [float]:  correlation length in km.
-        - path_coordinates [list]: list of coordinates (longitude, latitude) along the fibre path.
-        - PMD_parameter [float]:   average accumulated differential group delay in ps/(km ^ 0.5).
-        - realisation_count [int]: the number of fibre realisations with different distributed polarisation mode dispersion.
-        - photoelasticity [float]: the fibre photoelasticity.
+        - correlation_length [float]: correlation length in km
+        - beat_length [float]:        beat length in km
+        - section_length [float]:     PMD section length in km (at least the correlation length Lc for the coarse-step model, << Lc for Marcuse's model)
+        - path_coordinates [list]:    list of coordinates (longitude, latitude) along the fibre path.
+        - PMD_parameter [float]:      average accumulated differential group delay in ps/(km ^ 0.5).
+        - realisation_count [int]:    the number of fibre realisations with different distributed polarisation mode dispersion.
+        - photoelasticity [float]:    the fibre photoelasticity.
         """
-        assert 'FIBRE'             in parameters, f"Parameters are missing section 'FIBRE'."
-        assert 'section_length'    in parameters['FIBRE'], f"'section_length' is missing from parameters section 'FIBRE'."
-        assert 'PMD_parameter'     in parameters['FIBRE'], f"'PMD_parameter' is missing from parameters section 'FIBRE'."
-        assert 'realisation_count' in parameters['FIBRE'], f"'realisation_count' is missing from parameters section 'FIBRE'."
-        assert 'photoelasticity'   in parameters['FIBRE'], f"'photoelasticity' is missing from parameters section 'FIBRE'"
-        assert 'path_coordinates' in parameters['FIBRE'] or 'section_count' in parameters['FIBRE'], f"Parameters section 'FIBRE' must contain variable 'path_coordinates' or 'section_count'."
+        assert 'FIBRE'              in parameters, f"Parameters are missing section 'FIBRE'."
+        assert 'correlation_length' in parameters['FIBRE'], f"'correlation_length' is missing from parameters section 'FIBRE'."
+        assert 'beat_length'        in parameters['FIBRE'], f"'beat_length' is missing from parameters section 'FIBRE'."
+        assert 'section_length'     in parameters['FIBRE'], f"'section_length' is missing from parameters section 'FIBRE'."
+        assert 'PMD_parameter'      in parameters['FIBRE'], f"'PMD_parameter' is missing from parameters section 'FIBRE'."
+        assert 'realisation_count'  in parameters['FIBRE'], f"'realisation_count' is missing from parameters section 'FIBRE'."
+        assert 'photoelasticity'    in parameters['FIBRE'], f"'photoelasticity' is missing from parameters section 'FIBRE'"
+        assert 'path_coordinates'   in parameters['FIBRE'] or 'section_count' in parameters['FIBRE'], f"Parameters section 'FIBRE' must contain variable 'path_coordinates' or 'section_count'."
 
-        self._section_length    = parameters.getfloat('FIBRE', 'section_length')
-        self._PMD_parameter     = parameters.getfloat('FIBRE', 'PMD_parameter')
-        self._realisation_count = int(parameters.getfloat('FIBRE', 'realisation_count'))
-        self._photoelasticity   = parameters.getfloat('FIBRE', 'photoelasticity')
+        self._correlation_length = parameters.getfloat('FIBRE', 'correlation_length')
+        self._beat_length        = parameters.getfloat('FIBRE', 'beat_length')
+        self._section_length     = parameters.getfloat('FIBRE', 'section_length')
+        self._PMD_parameter      = parameters.getfloat('FIBRE', 'PMD_parameter')
+        self._realisation_count  = int(parameters.getfloat('FIBRE', 'realisation_count'))
+        self._photoelasticity    = parameters.getfloat('FIBRE', 'photoelasticity')
+        self._material           = refractiveindex.RefractiveIndexMaterial(
+            shelf = 'glass',
+            book  = 'fused_silica',
+            page  = 'Malitson'
+        )
         
         if 'path_coordinates' in parameters['FIBRE']:
             self._path_coordinates = np.array(json.loads(parameters.get('FIBRE', 'path_coordinates')), dtype = float)
@@ -52,8 +64,7 @@ class Fibre:
 
         self._init_path()
         self._init_DGD()
-        self._init_SOP_rotations()
-        self._init_material_strain()
+        self._init_PSP()
 
     def _init_path(self):
         """
@@ -68,130 +79,75 @@ class Fibre:
             self._path_positions    = np.append([0], np.cumsum(self.path_lengths))
             self._section_positions = np.append(np.arange(0, self.path_positions[-1], self._section_length), self.path_positions[-1])
             
-            section_longitudes = np.interp(self.section_positions, self.path_positions, self.path_coordinates[:, 0])
-            section_latitudes  = np.interp(self.section_positions, self.path_positions, self.path_coordinates[:, 1])
+            section_longitudes        = np.interp(self.section_positions, self.path_positions, self.path_coordinates[:, 0])
+            section_latitudes         = np.interp(self.section_positions, self.path_positions, self.path_coordinates[:, 1])
             self._section_coordinates = np.stack([section_longitudes, section_latitudes], axis = 1)
 
             self._section_lengths = np.diff(self.section_positions)
 
-            return
+        else:
+            self._path_lengths           = None
+            self._path_positions         = None
+            self._section_coordinates    = None
+            self._section_lengths        = np.full(
+                shape      = (self._section_count,),
+                fill_value = self._section_length,
+                dtype      = float
+            )
 
-        self._path_lengths        = None
-        self._path_positions      = None
-        self._section_coordinates = None
-        self._section_lengths     = np.full(
-            shape      = (self._section_count,),
-            fill_value = self._section_length,
-            dtype      = float
-        )
-        self._section_positions   = np.append([0], np.cumsum(self.section_lengths))
-        
+            self._section_positions      = np.append([0], np.cumsum(self.section_lengths))
+            
+    @abstractmethod
     def _init_DGD(self):
         """
         Initialise random differential group delay per realisation and fibre section in ps.
         """
-        section_DGD_means  = self.PMD_parameter * np.sqrt(self.section_lengths * np.pi * 3 / 8) # Czegledi et al. (2016): Polarization-Mode Dispersion Aware Digital Backpropagation, Prola et al. (1997): PMD Emulators and Signal Distortion in 2.48-Gb/s IM-DD Lightwave Systems
-        section_DGD_stdevs = section_DGD_means / 5
-        self.section_DGD = np.random.default_rng().normal(
-            loc   = section_DGD_means[:, None],
-            scale = section_DGD_stdevs[:, None],
-            size  = (self.section_count, self.realisation_count)
-        )
+        pass
 
-    def _init_SOP_rotations(self):
+    @abstractmethod
+    def _init_PSP(self):
         """
-        Initialise a random rotation of the state of polarisation per realisation and fibre section, in Stokes coordinates.
+        Initialise a random preferred orientation and/or scrambling of the state of polarisation per realisation and fibre section
         """
-        initialisation_vector = np.random.default_rng().normal(
-            size = (self.section_count, self.realisation_count, 4)
-        ) # Initialise [cos(theta), a * sin(theta)], Czegledi et al. (2016): Polarization Drift Channel Model for Coherent Fibre-Optic Systems
-        initialisation_vector /= np.linalg.norm(initialisation_vector, axis = -1)[..., None] # Normalise
+        pass
 
-        rotation_angle = np.arccos(initialisation_vector[..., 0, None])
-        rotation_axis  = initialisation_vector[..., 1:] / np.sin(rotation_angle)
-        self.section_SOP_rotation_stokes = rotation_angle * rotation_axis # ???, notation error in Czegledi et al. ???
-
-    def _init_material_strain(self):
-        """
-        Initialise the fibre with 0 material strain.
-        """
-        self.section_material_strain = np.zeros(
-            shape = (self.section_count),
-            dtype = float
-        )
-
-    def __call__(self, signal: Signal, verbose: bool = False) -> Signal:
+    def __call__(self, signal: Signal, strain: np.ndarray = None, verbose: bool = False) -> Signal:
         """
         Make fibre instances callable; see propagate()
         """
-        return self.propagate(signal, verbose)
+        return self.propagate(signal, strain, verbose)
 
-    def propagate(self, signal: Signal, verbose: bool = False) -> Signal:
+    @abstractmethod
+    def propagate(self, signal: Signal, strain: Signal, verbose: bool = False) -> Signal:
         """
         Propagate a polarisation-multiplexed phase-multiplexed signal through the fibre.
-        The model applies a differential group delay and rotates the principal axes of polarisation in every fibre section.
         Multiple fibre realisations are applied at once.
+        The calculations will be done on the device (CPU or GPU) that signal resides in (see Signal.to_device())
 
         Inputs:
         - signal [Signal]: the signal to propagate through the channel in the time domain, shape [R,B,S,P] with number of realisations R or R = 1, batch size B, sample count S and principal polarisations P = 2.
+        - strain [Signal]: If not None, contains longitudinal strain values per fibre section over time; shape [F,T] with fibre sections F and strain samples T
         - verbose [bool]: whether to show a progress bar
 
         Outputs:
         - [Signal]: the output signal, shape [R,B,S,P]
         """
-        signal = signal.copy()
-        signal.samples_frequency = signal.samples_frequency * np.ones(shape = (self.realisation_count, 1, 1, 1), dtype = int)
-        frequency_angular = signal.frequency_angular[None, None]
+        pass
 
-        iterable = zip(self.section_DGD, self.section_SOP_rotation, self.section_optical_strain)
-        if verbose:
-            from tqdm import tqdm
-            iterable = tqdm(
-                iterable,
-                total = self.section_count,
-                desc = "Propagating signal through fibre"
-            )
-
-        for section_DGD, section_SOP_rotation, section_optical_strain in iterable:
-            # Apply section DGD
-            section_DGD = section_DGD[:, None, None]
-            DGD = np.exp(-0.5j * section_DGD * (1 + section_optical_strain) * frequency_angular * 1e-12)
-            signal.samples_frequency[..., 0] *= DGD
-            signal.samples_frequency[..., 1] *= np.conj(DGD)
-
-            # Rotate PSP
-            signal.samples_frequency = np.einsum('rpq,rbsq->rbsp', section_SOP_rotation, signal.samples_frequency)
-
-        return signal
-
-    def PMD_jones(self, w: np.ndarray, verbose: bool = False) -> np.ndarray:
+    @abstractmethod
+    def Jones(self, frequency_angular: (np.ndarray, cp.ndarray), verbose: bool = False) -> np.ndarray:
         """
-        Calculate the frequency-dependent Jones matrix that describes this channel
+        Calculate the fibre Jones matrix in the absence of external perturbations.
+        The calculations will be done on the device (CPU or GPU) that signal resides in (see Signal.to_device())
 
         Inputs:
-        - w [np.ndarray]: frequencies in Rad/s to calculate the Jones matrix for
+        - frequency_angular [np.ndarray, cp.ndarray]: frequencies in rad/s at which to calculate the jones matrix, relative to the carrier frequency, shape [F,]
         - verbose [bool]: whether to show a progress bar
 
         Outputs:
-        - [np.ndarray]: Jones matrix of shape [R, W, 2, 2] where R is the number of fibre realisations and W is the length of w
+        - [np.ndarray, cp.ndarray]: the Jones matrices, shape [R,F,2,2]
         """
-        assert len(w.shape) == 1, f"w should have one dimension, but had {len(w.shape)}"
-
-        jones_matrix = np.zeros((self.realisation_count, len(w), 2, 2), dtype = complex)
-        jones_matrix[:, :, (0, 1), (0, 1)] = 1
-
-        iterable = zip(self.section_DGD, self.section_SOP_rotation, self.section_optical_strain)
-        if verbose:
-            from tqdm import tqdm
-            iterable = tqdm(iterable, total = self.section_count, desc = "Calculating waveplate model Jones matrix")
-
-        for section_DGD, section_SOP_rotation, section_optical_strain in iterable:
-            DGD = np.exp(-0.5j * section_DGD[:, None, None] * (1 + section_optical_strain) * w[None, :, None] * 1e-12)
-            jones_matrix[:, :, 0, :] *= DGD
-            jones_matrix[:, :, 1, :] *= np.conj(DGD)
-            jones_matrix = section_SOP_rotation[:, None] @ jones_matrix
-
-        return jones_matrix
+        pass
 
     def to_dict(self) -> dict:
         """
@@ -201,15 +157,26 @@ class Fibre:
         - [dict] The dictionary representation of this fibre
         """
         fibre_dict = {
-            'section_lengths':             self.section_lengths.tolist(),
-            'section_positions':           self.section_positions.tolist(),
-            'PMD_parameter':               self.PMD_parameter,
-            'realisation_count':           self.realisation_count,
-            'photoelasticity':             self.photoelasticity,
-            'section_DGD':                 self.section_DGD.tolist(),
-            'section_SOP_rotation_stokes': self.section_SOP_rotation_stokes.tolist(),
-            'section_material_strain':     self.section_material_strain.tolist(),
+            'correlation_length':         self.correlation_length,
+            'beat_length':                self.beat_length,
+            'section_lengths':            self.section_lengths.tolist(),
+            'section_positions':          self.section_positions.tolist(),
+            'PMD_parameter':              self.PMD_parameter,
+            'realisation_count':          self.realisation_count,
+            'photoelasticity':            self.photoelasticity,
+            'section_DGD':                self.section_DGD.tolist()
         }
+
+        if self._section_major_angles is not None:
+            fibre_dict = fibre_dict | {
+                'section_major_angles':   self.section_major_angles.tolist(),
+                'section_birefringences': self.section_birefringences.tolist()
+            }
+
+        else:
+            fibre_dict = fibre_dict | {
+                'section_PSP': self.section_PSP.tolist()
+            }
 
         if self._path_coordinates is not None:
             fibre_dict = fibre_dict | {
@@ -234,10 +201,12 @@ class Fibre:
         """
         parameters = ConfigParser()
         parameters.add_section('FIBRE')
-        parameters.set('FIBRE', 'section_length',    str(fibre_dict['section_lengths'][0]))
-        parameters.set('FIBRE', 'PMD_parameter',     str(fibre_dict['PMD_parameter']))
-        parameters.set('FIBRE', 'realisation_count', str(fibre_dict['realisation_count']))
-        parameters.set('FIBRE', 'photoelasticity',   str(fibre_dict['photoelasticity']))
+        parameters.set('FIBRE', 'correlation_length', str(fibre_dict['correlation_length']))
+        parameters.set('FIBRE', 'beat_length',        str(fibre_dict['beat_length']))
+        parameters.set('FIBRE', 'section_length',     str(fibre_dict['section_lengths'][0]))
+        parameters.set('FIBRE', 'PMD_parameter',      str(fibre_dict['PMD_parameter']))
+        parameters.set('FIBRE', 'realisation_count',  str(fibre_dict['realisation_count']))
+        parameters.set('FIBRE', 'photoelasticity',    str(fibre_dict['photoelasticity']))
 
         if 'path_coordinates' in fibre_dict:
             parameters.set('FIBRE', 'path_coordinates', str(fibre_dict['path_coordinates']))
@@ -245,27 +214,32 @@ class Fibre:
             parameters.set('FIBRE', 'section_count', str(len(fibre_dict['section_lengths'])))
 
         fibre = cls(parameters)
-        fibre.section_DGD                 = np.array(fibre_dict['section_DGD'])
-        fibre.section_SOP_rotation_stokes = np.array(fibre_dict['section_SOP_rotation_stokes'])
-        fibre.section_material_strain     = np.array(fibre_dict['section_material_strain'])
+        fibre.section_DGD                = np.array(fibre_dict['section_DGD'])
+
+        if 'section_major_angles' in fibre_dict:
+            fibre.section_major_angles   = np.array(fibre_dict['section_major_angles'])
+            fibre.section_birefringences = np.array(fibre_dict['section_birefringences'])
+        else:
+            fibre.section_PSP            = np.array(fibre_dict['section_PSP'])
 
         return fibre
 
     def __eq__(self, other):
-        if self._PMD_parameter                       == other._PMD_parameter                and \
-            self._photoelasticity                    == other._photoelasticity              and \
-            self._realisation_count                  == other._realisation_count            and \
-            self._section_count                      == other._section_count                and \
-            self._section_length                     == other._section_length               and \
-            np.all(self._path_coordinates            == other._path_coordinates)            and \
-            np.all(self._path_lengths                == other._path_lengths)                and \
-            np.all(self._path_positions              == other._path_positions)              and \
-            np.all(self._section_coordinates         == other._section_coordinates)         and \
-            np.all(self._section_lengths             == other._section_lengths)             and \
-            np.all(self._section_positions           == other._section_positions)           and \
-            np.all(self._section_DGD                 == other._section_DGD)                 and \
-            np.all(self._section_SOP_rotation_stokes == other._section_SOP_rotation_stokes) and \
-            np.all(self._section_material_strain     == other._section_material_strain):
+        if self._PMD_parameter                  == other._PMD_parameter        and \
+            self._photoelasticity               == other._photoelasticity      and \
+            self._realisation_count             == other._realisation_count    and \
+            self._section_count                 == other._section_count        and \
+            self._section_length                == other._section_length       and \
+            np.all(self._path_coordinates       == other._path_coordinates)    and \
+            np.all(self._path_lengths           == other._path_lengths)        and \
+            np.all(self._path_positions         == other._path_positions)      and \
+            np.all(self._section_coordinates    == other._section_coordinates) and \
+            np.all(self._section_lengths        == other._section_lengths)     and \
+            np.all(self._section_positions      == other._section_positions)   and \
+            np.all(self._section_DGD            == other._section_DGD)         and \
+            np.all(self._section_major_angles   == other._section_major_angles)  and \
+            np.all(self._section_birefringences == other._section_birefringences)  and \
+            np.all(self._section_PSP            == other._section_PSP):
             return True
 
         return False
@@ -334,7 +308,7 @@ class Fibre:
     @property
     def section_coordinates(self) -> np.ndarray:
         """
-        [np.ndarray] array of fibre section coordinates, shape [S+1, 2] where S is the number of fibre correlation lengths and the second dimension contains longitude, latitude
+        [np.ndarray] array of fibre section coordinates, shape [S+1, 2] where S is the number of fibre sections and the second dimension contains longitude, latitude
         """
         if self._section_coordinates is not None:
             return self._section_coordinates
@@ -358,7 +332,7 @@ class Fibre:
     @property
     def section_lengths(self) -> np.ndarray:
         """
-        [np.ndarray] array of fibre section lengths, shape [S] where S is the number of fibre correlation lengths
+        [np.ndarray] array of fibre section lengths, shape [S] where S is the number of fibre sections
         """
         return self._section_lengths
 
@@ -369,7 +343,7 @@ class Fibre:
     @property
     def section_positions(self) -> np.ndarray:
         """
-        [np.ndarray] array of accumulative fibre correlation lengths in km, shape [S+1] where S is the number of fibre correlation lengths
+        [np.ndarray] array of accumulative fibre sections in km, shape [S+1] where S is the number of fibre sections
         """
         return self._section_positions
 
@@ -380,7 +354,7 @@ class Fibre:
     @property
     def section_centre_positions(self) -> np.ndarray:
         """
-        [np.ndarray] array of accumulative fibre correlation lengths in km measured at each section centre, shape [S, 2] where S is the number of fibre sections
+        [np.ndarray] array of accumulative fibre sections in km measured at each section centre, shape [S, 2] where S is the number of fibre sections
         """
         return (self.section_positions[:-1] + self.section_positions[1:]) / 2
 
@@ -398,6 +372,28 @@ class Fibre:
     @section_count.setter
     def section_count(self, value):
         raise AttributeError("The section count section_count cannot be changed after instantiation of the Fibre.")
+
+    @property
+    def correlation_length(self) -> float:
+        """
+        [float] the fibre correlation length in km, after which the state of polarisation is uncorrelated to its initial state
+        """
+        return self._correlation_length
+
+    @correlation_length.setter
+    def correlation_length(self, value):
+        raise AttributeError("The correlation length correlation_length cannot be changed after instantiation of the Fibre")
+
+    @property
+    def beat_length(self) -> float:
+        """
+        [float] the fibre beat length in km, in which the differential phase rotates 2pi radians
+        """
+        return self._beat_length
+
+    @beat_length.setter
+    def beat_length(self, value):
+        raise AttributeError("The beat length beat_length cannot be changed after instantiation of the Fibre")
 
     @property
     def PMD_parameter(self) -> float:
@@ -462,12 +458,12 @@ class Fibre:
         """
         Accumulated differential group delay in ps, shape [R] where R is the number of fibre realisations
         """
-        w = np.array([-2e10, 2e10])
+        frequency_angular = np.array([-np.pi, np.pi]) / (60 * self.section_lengths[0])
 
-        jones_matrices = self.PMD_jones(w)
-        jones_matrices_derivative = np.diff(jones_matrices, axis = 1)[:, 0] / np.diff(w)[0]
+        Jones_matrices = self.Jones(frequency_angular) # [R,F,2,2]
+        Jones_matrices_derivative = np.diff(Jones_matrices, axis = 1)[:, 0] / np.diff(frequency_angular)[0]
 
-        accumulated_DGD = 2 * np.sqrt(np.linalg.det(jones_matrices_derivative)) * 1e12 # Gordon et al. - PMD Fundamentals: Polarization Mode Dispersion in Optical Fibers
+        accumulated_DGD = 2 * np.sqrt(np.linalg.det(Jones_matrices_derivative)) * 1e12 # Gordon et al. - PMD Fundamentals: Polarization Mode Dispersion in Optical Fibres
         accumulated_DGD = accumulated_DGD.real.astype(float)
 
         return accumulated_DGD
@@ -477,69 +473,49 @@ class Fibre:
         raise AttributeError("The accumulated DGD cannot be set directly; set section DGD instead")
 
     @property
-    def section_SOP_rotation_stokes(self) -> np.ndarray:
+    def section_major_angles(self) -> np.ndarray:
         """
-        [np.ndarray], dtype [float] state of polarisation rotations per section, expressed in Stokes parameters.
+        [np.ndarray], dtype [float] orientation of the major axes of birefringence per section in radians
         """
-        return self._section_SOP_rotation_stokes
+        return self._section_major_angles
 
-    @section_SOP_rotation_stokes.setter
-    def section_SOP_rotation_stokes(self, value: np.ndarray):
-        assert isinstance(value, np.ndarray), f"New section_SOP_rotation_stokes value must be type np.ndarray, but was a {type(value)}"
-        assert value.dtype in (float, int), f"New section_SOP_rotation_stokes array must contain values of type float, but contained {value.dtype}"
-        assert value.shape == (self.section_count, self.realisation_count, 3), f"New section_SOP_rotation_stokes array must have shape (self.section_count ({self.section_count}), self.realisation_count ({self.realisation_count}), 3), but had shape {value.shape}"
-        self._section_SOP_rotation_stokes = value.copy().astype(float)
-        self._section_SOP_rotation = sp.linalg.expm(-1j * np.tensordot(self.section_SOP_rotation_stokes, PAULI_VECTOR, 1))
-
-    @property
-    def section_SOP_rotation(self) -> np.ndarray:
-        """
-        [np.ndarray], dtype [float] state of polarisation rotations per section, expressed using rotation matrices
-        """
-        return self._section_SOP_rotation
-
-    @section_SOP_rotation.setter
-    def section_SOP_rotation(self, value):
-        raise AttributeError("The state of polarisation rotations cannot be set as rotation matrices; set section_SOP_rotation_stokes instead")
-        # assert isinstance(value, np.ndarray), f"New PSP value must be type np.ndarray, but was a {type(value)}"
-        # assert value.dtype in (float, int, comples), f"New PSP array must contain values of type complex, but contained {value.dtype}"
-        # assert value.shape == (self.Nsec, self.Nreal, 2, 2), f"New PSP array must have shape (self.Nsec ({self.Nsec}), self.Nreal ({self.Nreal}), 2, 2), but had shape {value.shape}"
-        # new_PSP = value.copy().astype(complex)
-        #
-        # new_PSP_stokes = np.zeros(shape = (self.Nsec, self.Nreal, 3), dtype = complex)
-        # new_PSP_log = sp.linalg.logm(new_PSP) / -1j # np.tensordot(self.PSP_stokes, PAULI_VECTOR, 1
-        # assert np.allclose(PSP_log[:, :, 0, 0], -PSP_log[:, :, 1, 1]) and np.allclose(PSP_log[:, :, (0, 1), (0, 1)], PSP_log[:, :, (0, 1), (0, 1)].real), f"No PAULI_1 scalar can be found from new PSP matrix"
-        # new_PSP_stokes[:, :, 0] = (PSP_log[:, :, 0, 0] - PSP_log[:, :, 1, 1]).real / 2
-        # assert np.allclose(PSP_log[:, :, 0, 1].real, PSP_log[:, :, 1, 0].real), f"No PAULI_2 scalar can be found from new PSP matrix"
-        # new_PSP_stokes[:, :, 1] = (PSP_log[:, :, 0, 1] + PSP_log[:, :, 1, 0]).real / 2
-        # assert np.allclose(PSP_log[:, :, 0, 1].imag, PSP_log[:, :, 1, 0].imag), f"No PAULI_3 scalar can be found from new PSP matrix"
-        # new_PSP_stokes[:, :, 2] = -(PSP_log[:, :, 0, 1] - PSP_log[:, :, 1, 0]).imag / 2
-        # new_PSP_stokes = new_PSP_stokes.real.astype(float)
-        #
-        # self._PSP = new_PSP
-        # self._PSP_stokes = new_PSP_stokes
+    @section_major_angles.setter
+    def section_major_angles(self, value) -> None:
+        assert self.section_major_angles is not None, f"Fibre was initialised with PSP matrices (not angles), and this cannot be changed"
+        assert isinstance(value, np.ndarray), f"New section_major_angles value must be type np.ndarray, but was a {type(value)}"
+        assert value.dtype in (float, int), f"New section_major_angles array must contain values of type float, but contained {value.dtype}"
+        assert value.shape == (self.section_count, self.realisation_count), f"New section_major_angles array must have shape (self.section_count ({self.section_count}), self.realisation_count ({self.realisation_count})), but had shape {value.shape}"
+        # assert np.all((value >= -np.pi) & (value < np.pi)), f"New section_major_angles array must have values between -pi and pi"
+        self._section_major_angles = value.copy().astype(float)
 
     @property
-    def section_material_strain(self) -> np.ndarray:
+    def section_birefringences(self) -> np.ndarray:
         """
-        [np.ndarray], dtype [float] material strain parameter per fibre section.
+        [np.ndarray], dtype [float] local differential phase between the major polarisation axes per section in ps
         """
-        return self._section_material_strain
+        return self._section_birefringences
 
-    @section_material_strain.setter
-    def section_material_strain(self, value):
-        assert isinstance(value, np.ndarray), f"New section_material_strain value must be type np.ndarray, but was a {type(value)}"
-        assert value.dtype in (float, int), f"New section_material_strain array must contain values of type float, but contained {value.dtype}"
-        assert value.shape == (self.section_count,), f"New section_material_strain array must have shape (self.section_count ({self.section_count}),), but had shape {value.shape}"
-        self._section_material_strain = value.copy().astype(float)
+    @section_birefringences.setter
+    def section_birefringences(self, value) -> None:
+        assert self.section_birefringences is not None, f"Fibre was initialised with PSP matrices (not angles), and this cannot be changed"
+        assert isinstance(value, np.ndarray), f"New section_birefringences value must be type np.ndarray, but was a {type(value)}"
+        assert value.dtype in (float, int), f"New section_birefringences array must contain values of type float, but contained {value.dtype}"
+        assert value.shape == (self.section_count, self.realisation_count), f"New section_birefringences array must have shape (self.section_count ({self.section_count}), self.realisation_count ({self.realisation_count})), but had shape {value.shape}"
+        # assert np.all((value >= -np.pi) & (value < np.pi)), f"New section_birefringences array must have values between -pi and pi"
+        self._section_birefringences = value.copy().astype(float)
 
     @property
-    def section_optical_strain(self) -> np.ndarray:
+    def section_PSP(self) -> np.ndarray:
         """
-        [np.ndarray], dtype [float] optical strain parameter per fibre section.
+        [np.ndarray], dtype [float] matrices that rotate the state of polarisation (SOP) to the local principle states of polarisation (PSPs)
         """
-        return self.photoelasticity * self.section_material_strain
+        return self._section_PSP
 
-    @section_optical_strain.setter
-    def section_optical_strain(self, value):
-        raise AttributeError("The optical strain cannot be set directly; set section_material_strain instead")
+    @section_PSP.setter
+    def section_PSP(self, value) -> None:
+        assert self._section_PSP is not None, f"Fibre was initialised with PSP angles (not matrices), and this cannot be changed"
+        assert isinstance(value, np.ndarray), f"New section_PSP value must be type np.ndarray, but was a {type(value)}"
+        assert value.dtype in (float, int, complex), f"New section_PSP array must contain values of type complex, but contained {value.dtype}"
+        assert value.shape == (self.section_count, self.realisation_count, 2, 2), f"New section_PSP array must have shape (self.section_count ({self.section_count}), self.realisation_count ({self.realisation_count}), 2, 2), but had shape {value.shape}"
+        assert np.allclose(value[..., 0, 0], value[..., 1, 1].conjugate()) and np.allclose(value[..., 1, 0], -value[..., 0, 1].conjugate()), f"New section_PSP array must contain unitary matrices, but didn't"
+        self._section_PSP = value.copy().astype(complex)

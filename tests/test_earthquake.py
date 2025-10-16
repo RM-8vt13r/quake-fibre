@@ -3,12 +3,14 @@ Test correctness of earthquake.py
 """
 from configparser import ConfigParser
 
-from tremor_waveplate_toolbox import Earthquake, Fibre
+from tremor_waveplate_toolbox import Earthquake, FibreCoarseStep
 
 parameters = ConfigParser()
 
 parameters['FIBRE'] = {
-    'section_length': '0.1',       # Correlation length in km
+    'correlation_length': '0.1',   # Correlation length in km
+    'beat_length': '0.03',         # Beat length in km
+    'section_length': '0.1',       # Section length in km
     'path_coordinates': '[\
         [102.57171090634661, 5.791616724837154],\
         [102.72290646910318, 5.906566563564761],\
@@ -25,7 +27,7 @@ parameters['EARTHQUAKE'] = {
 }
 
 def test_earthquake():
-    fibre      = Fibre(parameters)
+    fibre      = FibreCoarseStep(parameters)
     earthquake = Earthquake(parameters)
 
     times, displacements_normal, displacements_longitude, displacements_latitude, displacements_projected, strains_projected = earthquake.request_fibre_section_projected_strain(fibre, True)

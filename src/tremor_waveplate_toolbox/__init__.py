@@ -1,6 +1,8 @@
 """
 Initialise the tremor-waveplate-toolbox module by specifying its properties and importing all its functionality.
 """
+from .fibre_coarse_step import FibreCoarseStep
+from .fibre_marcuse import FibreMarcuse
 from .fibre import Fibre
 from .signal import Signal
 from .transmitter import Transmitter
