@@ -12,10 +12,13 @@ After [installing the toolbox](#testing-and-scripts), take a look at the noteboo
 
 
 ## Installation
-To install and use this project:  
+If you want to run the included unit tests and scripts, refer to [Testing and Scripts](#testing-and-scripts) first.
+
+To use this project:  
 1. Install [Python](https://www.python.org) or [Anaconda](https://www.anaconda.com).  
-2. Open a command line terminal in the directory of your project.  
-3. (Recommended) create a new virtual environment:  
+2. If you want to use CUDA acceleration, install [CUDA Toolkit](https://developer.nvidia.com/cuda-toolkit).
+3. Open a command line terminal in the directory of your project.  
+4. (Recommended) create a new virtual environment:  
    - [venv](https://docs.python.org/3/library/venv.html):  
      `python -m venv env`,  
      `python3 -m venv env`, or  
@@ -23,7 +26,7 @@ To install and use this project:
      (depending on your OS and Python installation).  
    - [Anaconda](https://www.anaconda.com/download):  
      `conda create -n tremor-waveplate`.  
-4. Activate the environment:  
+5. Activate the environment:  
    - venv:  
      `call env/Scripts/activate`
      on Windows, or  
@@ -31,33 +34,28 @@ To install and use this project:
      on Linux and MacOSX.  
    - Anaconda:  
      `conda activate tremor-waveplate`.  
-5. Install this repository using..  
+6. Install this repository using..  
    a. ..HTTPS.
       This will require you to login using your GitLab credentials.
       Note: you will probably need GitLab-specific credentials; a constitutional login might fail.  
 
       ```bat
-      pip install git+https://gitlab.tue.nl/r.m.butler/tremor-waveplate-toolbox.git
+      pip install "tremor-waveplate-toolbox @ git+https://gitlab.tue.nl/r.m.butler/tremor-waveplate-toolbox.git"
       ```
-      or, if you want to run unit tests from the 'tests' directory and/or demos from the 'scripts' directory (see [Testing and scripts](#testing_and_scripts)):  
-      ```bat
-      pip install "tremor-waveplate-toolbox[testing] @ git+https://gitlab.tue.nl/r.m.butler/tremor-waveplate-toolbox.git"
-      ```
-      
+      If you want to use CUDA acceleration, use `tremor-waveplate-toolbox[cuda]` instead.
+
    b. ..SSH.
       This will require you to [setup a personal SSH key pair](https://docs.gitlab.com/user/ssh/) beforehand.
       ```bat
-      pip install git+ssh://git@gitlab.tue.nl/r.m.butler/tremor-waveplate-toolbox.git
+      pip install "tremor-waveplate-toolbox @ git+ssh://git@gitlab.tue.nl/r.m.butler/tremor-waveplate-toolbox.git"
       ```
-      or, if you want to run unit tests from the 'tests' directory and/or demos from the 'scripts' directory (see [Testing and scripts](#testing_and_scripts)):  
-      ```bat
-      pip install "tremor-waveplate-toolbox[testing] @ git+ssh://git@gitlab.tue.nl/r.m.butler/tremor-waveplate-toolbox.git"
-      ```
-6. All done!
+      If you want to use CUDA acceleration, use `tremor-waveplate-toolbox[cuda]` instead.
+
+7. All done!
 
 
 ## Testing and scripts
-To run scripts or unit tests from this project:  
+To run scripts or unit tests from the corresponding directories in this project:  
 1. Clone this repository using..  
    a. ..HTTPS:  
    ```bat
@@ -67,14 +65,18 @@ To run scripts or unit tests from this project:
    ```bat
    git clone git@gitlab.tue.nl:r.m.butler/tremor-waveplate-toolbox.git
    ```  
-   See step 5 of [Installation](#installation) for differences between HTTPS and SSH cloning.
+   See step 6 of [Installation](#installation) for differences between HTTPS and SSH cloning.
 2. Move into the newly created project folder.  
 3. Follow steps 1-5 under [Installation](#installation).  
-   Make sure to install the 'testing' version.  
-4. To run scripts:  
+4. Install the toolbox using
+   ```bat
+   pip install .[testing]
+   ```  
+   If you want to use CUDA acceleration, use `.[testing,cuda]` instead.  
+5. To run scripts:  
    `jupyter notebook scripts`  
-5. To run unit tests:  
-   `pytest -s`  
+6. To run unit tests:  
+   `pytest tests -s`  
 
 
 ## Usage
@@ -96,7 +98,7 @@ transmitted_symbols, transmitted_signal = transmitter.transmit_random(shape = (
 ))
 
 # Create an optical fibre model, and transmit the signal
-fibre = Fibre(parameters)
+fibre = FibreCoarseStep(parameters)
 received_signal = fibre(transmitted_signal, verbose = True)
 
 # Receive the signal
@@ -185,15 +187,15 @@ If you use this work, please cite
 }
 
 @article{Butler::earthquake_PMD_modelling,
-    author={Butler, Rick Maarten and Kasaneva, Jos\'e N\'u\~nez and H\"ager, Christian and Alvarado, Alex},
+    author={Butler, Rick Maarten and Kasaneva, Jos\'e N\'u\~nez and Karlsson, Magnus and H\"ager, Christian and Alvarado, Alex},
     title={Modelling Optical Fibre Birefringence under Seismic Strain},
-    journal={Nature},
+    journal={Nature, of course},
     year={},
     month={},
     volume={},
     number={},
     pages={},
-    publisher={Springer},
+    publisher={Springer Nature},
     doi={}
 }
 ```
