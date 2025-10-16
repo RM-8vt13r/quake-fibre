@@ -42,14 +42,14 @@ To use this project:
       ```bat
       pip install "tremor-waveplate-toolbox @ git+https://gitlab.tue.nl/r.m.butler/tremor-waveplate-toolbox.git"
       ```
-      If you want to use CUDA acceleration, use `tremor-waveplate-toolbox[cuda]` instead.
+      If you want to use CUDA acceleration, use `tremor-waveplate-toolbox[cuda..x]` instead, where you replace `..` with `11`, `12` or `13` depending on your CUDA Toolkit installation.
 
    b. ..SSH.
       This will require you to [setup a personal SSH key pair](https://docs.gitlab.com/user/ssh/) beforehand.
       ```bat
       pip install "tremor-waveplate-toolbox @ git+ssh://git@gitlab.tue.nl/r.m.butler/tremor-waveplate-toolbox.git"
       ```
-      If you want to use CUDA acceleration, use `tremor-waveplate-toolbox[cuda]` instead.
+      If you want to use CUDA acceleration, use `tremor-waveplate-toolbox[cuda..x]` instead, where you replace `..` with `11`, `12` or `13` depending on your CUDA Toolkit installation.
 
 7. All done!
 
@@ -72,7 +72,7 @@ To run scripts or unit tests from the corresponding directories in this project:
    ```bat
    pip install .[testing]
    ```  
-   If you want to use CUDA acceleration, use `.[testing,cuda]` instead.  
+   If you want to use CUDA acceleration, use `.[testing,cuda..x]` instead where you replace `..` with `11`, `12` or `13` depending on your CUDA Toolkit installation.  
 5. To run scripts:  
    `jupyter notebook scripts`  
 6. To run unit tests:  

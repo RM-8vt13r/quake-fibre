@@ -55,8 +55,16 @@ Homepage = "https://gitlab.tue.nl/r.m.butler/tremor-waveplate-toolbox"
 Repository = "https://gitlab.tue.nl/r.m.butler/tremor-waveplate-toolbox"
 
 [project.optional-dependencies]
-cuda = [
-    "cupy"
+cuda13x = [
+    "cupy-cuda13x"
+]
+
+cuda12x = [
+    "cupy-cuda12x"
+]
+
+cuda11x = [
+    "cupy-cuda11x"
 ]
 
 testing = [
