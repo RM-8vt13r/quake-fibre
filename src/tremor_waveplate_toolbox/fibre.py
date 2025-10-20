@@ -135,7 +135,7 @@ class Fibre(ABC):
         pass
 
     @abstractmethod
-    def Jones(self, frequency_angular: (np.ndarray, cp.ndarray), verbose: bool = False) -> np.ndarray:
+    def Jones(self, frequency_angular: (np.ndarray), verbose: bool = False) -> np.ndarray:
         """
         Calculate the fibre Jones matrix in the absence of external perturbations.
         The calculations will be done on the device (CPU or GPU) that signal resides in (see Signal.to_device())

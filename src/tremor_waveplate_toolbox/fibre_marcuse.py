@@ -6,10 +6,15 @@ from configparser import ConfigParser
 from typing import override
 
 import numpy as np
+try:
+    import cupy as cp
+except:
+    pass
 
 from .fibre import Fibre
 from .signal import Signal
 from .utils import rotation_matrix, phase_matrix
+from .constants import Device
 
 class FibreMarcuse(Fibre):
     """
@@ -49,18 +54,14 @@ class FibreMarcuse(Fibre):
         """
         assert strain is None, f"earthquake functionality not implemented yet"
 
-        if signal.device == Device.CUDA:
-            xp = cp
-            signal.to_device(Device.CUDA) # Ensure that the signal resides in the currently active cupy GPU
-        else:
-            xp = np
+        if signal.device == Device.CUDA: signal.to_device(Device.CUDA) # Ensure that the signal resides in the currently active cupy GPU
 
-        section_DGDs = xp.array(self.section_DGD)
-        section_major_angles = xp.array(self.section_major_angles)
-        section_birefringences = xp.array(self.section_birefringences)
+        section_DGDs = signal.xp.array(self.section_DGD[:, :, None, None])
+        section_major_angles = signal.xp.array(self.section_major_angles)
+        section_birefringences = signal.xp.array(self.section_birefringences[:, :, None, None])
 
         signal = signal.copy()
-        signal.samples_frequency = xp.tile(signal.samples_frequency, (self.realisation_count, 1, 1, 1))
+        signal.samples_frequency = signal.xp.tile(signal.samples_frequency, (self.realisation_count, 1, 1, 1))
         frequency_angular = signal.frequency_angular[None, None]
 
         iterable = zip(section_DGDs, section_major_angles, section_birefringences)
@@ -69,24 +70,24 @@ class FibreMarcuse(Fibre):
             iterable = tqdm(
                 iterable,
                 total = self.section_count,
-                desc = "Propagating signal through fibre"
+                desc = f"Propagating signal through fibre ({'CPU' if signal.device == Device.CPU else 'CUDA'})"
             )
 
         for section_DGD, section_major_angle, section_birefringence in iterable:
             # Rotate to local birefringence axes
-            signal.samples_frequency = xp.einsum(
+            signal.samples_frequency = signal.xp.einsum(
                 'rpq,rbsq->rbsp',
                 rotation_matrix(section_major_angle),
                 signal.samples_frequency
             )
 
             # Apply differential phase
-            differential_phase = xp.exp(-0.5j * (section_birefringence[:, None, None] + section_DGD[:, None, None] * frequency_angular * 1e-12))
+            differential_phase = signal.xp.exp(-0.5j * (section_birefringence + section_DGD * frequency_angular * 1e-12))
             signal.samples_frequency[..., 0] *= differential_phase
             signal.samples_frequency[..., 1] *= differential_phase.conjugate()
 
             # Rotate back
-            signal.samples_frequency = xp.einsum(
+            signal.samples_frequency = signal.xp.einsum(
                 'rpq,rbsq->rbsp',
                 rotation_matrix(-section_major_angle),
                 signal.samples_frequency
@@ -95,38 +96,48 @@ class FibreMarcuse(Fibre):
         return signal
 
     @override
-    def Jones(self, frequency_angular: (np.ndarray, cp.ndarray), verbose: bool = False) -> np.ndarray:
+    def Jones(self, frequency_angular: (np.ndarray), verbose: bool = False) -> np.ndarray:
         assert len(frequency_angular.shape) == 1, f"frequency_angular must have shape [F,], but had shape {frequency_angular.shape}"
         
-        if signal.device == Device.CUDA:
+        if isinstance(frequency_angular, cp.ndarray):
             xp = cp
-            signal.to_device(Device.CUDA) # Ensure that the signal resides in the currently active cupy GPU
+            frequency_angular = cp.array(frequency_angular) # Ensure that the frequency array resides in the currently active cupy GPU
         else:
             xp = np
 
-        section_DGDs = xp.array(self.section_DGD)
+        section_DGDs = xp.array(self.section_DGD[:, :, None, None])
         section_major_angles = xp.array(self.section_major_angles)
-        section_birefringences = xp.array(self.section_birefringences)
+        section_birefringences = xp.array(self.section_birefringences[:, :, None, None])
+        frequency_angular = frequency_angular[None, :, None] # Prepare extra dimensions for later calculations
 
-        iterable = zip(section_DGD, section_major_angles, section_birefringences)
+        iterable = zip(section_DGDs, section_major_angles, section_birefringences)
         if verbose:
             from tqdm import tqdm
             iterable = tqdm(
                 iterable,
                 total = self.section_count,
-                desc = "Building Jones matrix"
+                desc = f"Building Jones matrix ({'CPU' if isinstance(frequency_angular, np.ndarray) else 'CUDA'})"
             )
         
-        Jones_matrix = cp.eye(2, dtype = complex)[None, None] # [1, 1, 2, 2]
+        Jones_matrix = xp.tile(xp.eye(2, dtype = complex)[None, None], (self.realisation_count, frequency_angular.shape[1], 1, 1))
         for section_DGD, section_major_angle, section_birefringence in iterable:
             # Rotate to local birefringence axes
-            Jones_matrix = rotation_matrix(section_major_angle)[:, None] @ Jones_matrix
-
+            Jones_matrix = np.einsum(
+                'rpq,rfqs->rfps',
+                rotation_matrix(section_major_angle),
+                Jones_matrix
+            )
+            
             # Apply differential phase
-            differential_phase = cp.exp(-0.5j * (section_birefringence[:, None] + section_DGD[:, None] * frequency_angular[None, :] * 1e-12))[:, :, None]
-            Jones_matrix = Jones_matrix * cp.stack([differential_phase, differential_phase.conjugate()], axis = 2)
+            differential_phase = xp.exp(-0.5j * (section_birefringence + section_DGD * frequency_angular * 1e-12))
+            Jones_matrix[:, :, 0, :] *= differential_phase
+            Jones_matrix[:, :, 1, :] *= differential_phase.conjugate()
 
             # Rotate back
-            Jones_matrix = rotation_matrix(-section_major_angle)[:, None] @ Jones_matrix
+            Jones_matrix = np.einsum(
+                'rpq,rfqs->rfps',
+                rotation_matrix(-section_major_angle),
+                Jones_matrix
+            )
 
         return Jones_matrix

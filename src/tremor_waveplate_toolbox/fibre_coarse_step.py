@@ -14,7 +14,7 @@ except:
 
 from .fibre import Fibre
 from .signal import Signal
-from .constants import PAULI_VECTOR
+from .constants import PAULI_VECTOR, Device
 
 class FibreCoarseStep(Fibre):
     """
@@ -62,17 +62,13 @@ class FibreCoarseStep(Fibre):
         """
         assert strain is None, f"earthquake functionality not implemented yet"
 
-        if signal.device == Device.CUDA:
-            xp = cp
-            signal.to_device(Device.CUDA) # Ensure that the signal resides in the currently active cupy GPU
-        else:
-            xp = np
+        if signal.device == Device.CUDA: signal.to_device(Device.CUDA) # Ensure that the signal resides in the currently active cupy GPU
 
-        section_DGDs = xp.array(self.section_DGD)
-        section_PSPs = xp.array(self.section_PSP)
+        section_DGDs = signal.xp.array(self.section_DGD)
+        section_PSPs = signal.xp.array(self.section_PSP)
 
         signal = signal.copy()
-        signal.samples_frequency = xp.tile(signal.samples_frequency, (self.realisation_count, 1, 1, 1))
+        signal.samples_frequency = signal.xp.tile(signal.samples_frequency, (self.realisation_count, 1, 1, 1))
         frequency_angular = signal.frequency_angular[None, None]
 
         iterable = zip(section_DGDs, section_PSPs)
@@ -81,17 +77,17 @@ class FibreCoarseStep(Fibre):
             iterable = tqdm(
                 iterable,
                 total = self.section_count,
-                desc = "Propagating signal through fibre"
+                desc = f"Propagating signal through fibre ({'CPU' if signal.device == Device.CPU else 'CUDA'})"
             )
 
         for section_DGD, section_PSP in iterable:
             # Apply section DGD
-            DGD = xp.exp(-0.5j * section_DGD[:, None, None] * frequency_angular * 1e-12)
+            DGD = signal.xp.exp(-0.5j * section_DGD[:, None, None] * frequency_angular * 1e-12)
             signal.samples_frequency[..., 0] *= DGD
             signal.samples_frequency[..., 1] *= DGD.conjugate()
 
             # Scramble SOP
-            signal.samples_frequency = xp.einsum(
+            signal.samples_frequency = signal.xp.einsum(
                 'rpq,rbsq->rbsp',
                 section_PSP,
                 signal.samples_frequency
@@ -100,7 +96,7 @@ class FibreCoarseStep(Fibre):
         return signal
 
     @override
-    def Jones(self, frequency_angular: (np.ndarray, cp.ndarray), verbose: bool = False) -> np.ndarray:
+    def Jones(self, frequency_angular: (np.ndarray), verbose: bool = False) -> np.ndarray:
         assert len(frequency_angular.shape) == 1, f"frequency_angular must have shape [F,], but had shape {frequency_angular.shape}"
 
         if isinstance(frequency_angular, cp.ndarray):
@@ -109,8 +105,9 @@ class FibreCoarseStep(Fibre):
         else:
             xp = np
 
-        section_DGDs = xp.array(self.sectionDGD)
+        section_DGDs = xp.array(self.section_DGD[:, :, None, None])
         section_PSPs = xp.array(self.section_PSP)
+        frequency_angular = frequency_angular[None, :, None] # Prepare extra dimensions for later calculations
 
         iterable = zip(section_DGDs, section_PSPs)
         if verbose:
@@ -118,14 +115,16 @@ class FibreCoarseStep(Fibre):
             iterable = tqdm(
                 iterable,
                 total = self.section_count,
-                desc = "Building Jones matrix"
+                desc = f"Building Jones matrix ({'CPU' if isinstance(frequency_angular, np.ndarray) else 'CUDA'})"
             )
         
-        Jones_matrix = xp.tile(xp.eye(2, dtype = complex)[None, None], (self.realisation_count, len(frequency_angular), 1, 1)) # [R, F, 2, 2]
+        Jones_matrix = xp.tile(xp.eye(2, dtype = complex)[None, None], (self.realisation_count, frequency_angular.shape[1], 1, 1))
         for section_DGD, section_PSP in iterable:
             # Apply section DGD
-            differential_phase = xp.exp(-0.5j * section_DGD[:, None] * frequency_angular[None, :] * 1e-12)[:, :, None]
-            Jones_matrix = Jones_matrix * xp.stack([differential_phase, differential_phase.conjugate()], axis = 2)
+            differential_phase = xp.exp(-0.5j * section_DGD * frequency_angular * 1e-12)
+            
+            Jones_matrix[:, :, 0, :] *= differential_phase
+            Jones_matrix[:, :, 1, :] *= differential_phase.conjugate()
 
             # Scramble SOP
             Jones_matrix = xp.einsum(

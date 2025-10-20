@@ -1,6 +1,8 @@
 """
 A structure representing a signal.
 """
+import sys
+
 import numpy as np
 try:
     import cupy as cp
@@ -16,8 +18,7 @@ class Signal:
     def __init__(self,
             samples: np.ndarray,
             sample_rate: float,
-            domain: Domain = Domain.TIME,
-            device: Device = Device.CPU
+            domain: Domain = Domain.TIME
         ):
         """
         Create a new Signal.
@@ -28,9 +29,9 @@ class Signal:
         - domain [Domain]: domain (time or frequency) in which samples is given.
         """
         assert isinstance(domain, Domain), f"domain must be a Domain, but was a {type(domain)}"
-        assert isinstance(device, Device), f"device must be a Device, but was a {type(device)}"
+        # assert isinstance(device, Device), f"device must be a Device, but was a {type(device)}"
         self._domain = domain
-        self._device = device
+        self._device = Device.CPU if isinstance(samples, np.ndarray) else Device.CUDA
         self.samples = samples
         self.sample_rate = sample_rate
 
@@ -80,13 +81,16 @@ class Signal:
         self.samples_frequency = new_samples_frequency
 
     def __eq__(self, other) -> bool:
+        other_device = other.device
         other.to_domain(self.domain)
         other.to_device(self.device)
         if self.samples.shape == other.samples.shape and \
             self.xp.allclose(self.samples, other.samples) and \
             self.xp.isclose(self.sample_rate, other.sample_rate):
+            other.to_device(other_device)
             return True
         
+        other.to_device(other_device)
         return False
 
     def to_device(self, device: Device) -> None:
@@ -98,11 +102,12 @@ class Signal:
         """
         match device:
             case Device.CPU:
+                if self.device == Device.CPU: return
                 self._device = device
-                self.samples = np.array(self.samples)
+                self.samples = np.array(self.samples.get())
 
             case Device.CUDA:
-                assert 'cp' in vars(), f"Cannot move signal onto GPU without CUDA-enabled installation (see installation instructions)"
+                assert 'cupy' in sys.modules, f"Cannot move signal onto GPU without CUDA-enabled installation (see installation instructions)"
                 self._device = device
                 self.samples = cp.array(self.samples)
             
@@ -143,7 +148,7 @@ class Signal:
 
     @samples.setter
     def samples(self, value):
-        assert isinstance(value, (np.ndarray)) or ('cp' in vars() and isinstance(value, cp.ndarray)), f"New samples must have type np.ndarray or cp.ndarray (if cupy is available), but had {type(value)}"
+        assert isinstance(value, (np.ndarray)) or ('cupy' in sys.modules and isinstance(value, cp.ndarray)), f"New samples must have type np.ndarray or cp.ndarray (if cupy is available), but had {type(value)}"
         assert len(value.shape) >= 2, f"New samples must have at least two dimensions ..., S and C, but had only {len(value.shape)}"
         assert value.dtype in (complex, float, int), f"New samples must have datatype complex, but were {value.dtype}"
         # assert '_samples' not in self.__dir__() or self._samples.shape[:-2] + self._samples.shape[-1:] == value.shape[:-2] + value.shape[-1:], f"All new samples dimensions must match the previous samples except dimension -2, but their dimensions were {self._samples.shape} and {value.shape}"
