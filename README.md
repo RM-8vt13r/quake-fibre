@@ -84,7 +84,7 @@ Take a look at the notebooks in the 'scripts' folder for specific demonstrations
 After [installation](#installation), general usage looks like:
 ```python
 from configparser import ConfigParser
-from tremor_waveplate_toolbox import Fibre, Transmitter, Receiver, Earthquake
+from tremor_waveplate_toolbox import Fibre, Transmitter, Receiver, Earthquake, Device
 
 # Load predefined parameters describing a fibre and transceiver
 parameters = ConfigParser()
@@ -105,6 +105,9 @@ received_signal = fibre(transmitted_signal, verbose = True)
 receiver = Receiver(parameters)
 received_symbols = receiver(received_signal)
 
+# Propagate using CUDA acceleration
+transmitted_signal.to_device(Device.CUDA)
+received_signal = fibre(transmitted_signal, verbose = True)
 
 # Create an earthquake, and measure strain along the fibre link
 earthquake = Earthquake(
