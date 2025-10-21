@@ -3,8 +3,13 @@ Constants for use in optical fibre modelling.
 """
 
 from enum import Enum
+import sys
 
 import numpy as np
+try:
+    import cupy as cp
+except:
+    pass
 
 # Domains
 Domain = Enum('Domain', [

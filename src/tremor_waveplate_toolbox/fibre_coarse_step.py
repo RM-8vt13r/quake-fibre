@@ -4,6 +4,7 @@ Currently it models only PMD effects: (earthquake-dependent) differential group 
 """
 from configparser import ConfigParser
 from typing import override
+import sys
 
 import numpy as np
 import scipy as sp
@@ -90,7 +91,8 @@ class FibreCoarseStep(Fibre):
             signal.samples_frequency = signal.xp.einsum(
                 'rpq,rbsq->rbsp',
                 section_PSP,
-                signal.samples_frequency
+                signal.samples_frequency,
+                optimize = True
             )
 
         return signal
@@ -99,7 +101,7 @@ class FibreCoarseStep(Fibre):
     def Jones(self, frequency_angular: (np.ndarray), verbose: bool = False) -> np.ndarray:
         assert len(frequency_angular.shape) == 1, f"frequency_angular must have shape [F,], but had shape {frequency_angular.shape}"
 
-        if isinstance(frequency_angular, cp.ndarray):
+        if 'cupy' in sys.modules and isinstance(frequency_angular, cp.ndarray):
             xp = cp
             frequency_angular = cp.array(frequency_angular) # Ensure that the frequency array resides in the currently active cupy GPU
         else:
@@ -130,7 +132,8 @@ class FibreCoarseStep(Fibre):
             Jones_matrix = xp.einsum(
                 'rpq,rfqs->rfps',
                 section_PSP,
-                Jones_matrix
+                Jones_matrix,
+                optimize = True
              )
 
         return Jones_matrix
