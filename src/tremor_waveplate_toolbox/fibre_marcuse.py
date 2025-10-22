@@ -51,16 +51,15 @@ class FibreMarcuse(Fibre):
         self._section_PSP          = None
 
     @override
-    def propagate(self, signal: Signal, strain: Signal = None, verbose: bool = False) -> Signal:
+    def propagate(self, signal: Signal, strain: Signal = None, transmission_time: float = 0, verbose: bool = False) -> Signal:
         """
         This model rotates to the correlated local major birefringence axes, applies a uniform differential phase- and group delay, and rotates back to the reference frame in every section.
         """
-        assert strain is None, f"earthquake functionality not implemented yet"
-
         if signal.device == Device.CUDA: signal.to_device(Device.CUDA) # Ensure that the signal resides in the currently active cupy GPU
+        if strain is not None: strain.to_device(signal.device)
 
         section_DGDs = signal.xp.array(self.section_DGD[:, :, None, None])
-        section_major_rotations = signal.xp.array(rotation_matrix(self.section_major_angles))
+        section_major_rotations = signal.xp.array(rotation_matrix(self.section_major_angles[:, :, None]))
         section_birefringences = signal.xp.array(self.section_birefringences[:, :, None, None])
 
         signal = signal.copy()
@@ -79,7 +78,7 @@ class FibreMarcuse(Fibre):
         for section_DGD, section_major_rotation, section_birefringence in iterable:
             # Rotate to local birefringence axes
             signal.samples_frequency = signal.xp.einsum(
-                'rpq,rbsq->rbsp',
+                'rbpq,rbsq->rbsp',
                 section_major_rotation,
                 signal.samples_frequency,
                 optimize = True
@@ -87,13 +86,17 @@ class FibreMarcuse(Fibre):
             
             # Apply differential phase
             differential_phase = signal.xp.exp(-0.5j * (section_birefringence + section_DGD * frequency_angular * 1e-12))
-            signal.samples_frequency[..., 0] *= differential_phase
-            signal.samples_frequency[..., 1] *= differential_phase.conjugate()
+            signal.samples_frequency *= signal.xp.stack([differential_phase, differential_phase.conjugate()], axis = 3) # [R, B, S, 2] * [R, 1, S]
+
+            # Apply strain
+            if strain is not None:
+                # Retrieve strain
+                pass
 
             # Rotate back
             signal.samples_frequency = signal.xp.einsum(
-                'rpq,rbsq->rbsp',
-                section_major_rotation.transpose((0, 2, 1)),
+                'rbpq,rbsq->rbsp',
+                section_major_rotation.transpose((0, 1, 3, 2)),
                 signal.samples_frequency,
                 optimize = True
             )
@@ -110,10 +113,10 @@ class FibreMarcuse(Fibre):
         else:
             xp = np
 
-        section_DGDs = xp.array(self.section_DGD[:, :, None, None])
-        section_major_rotations = xp.array(rotation_matrix(self.section_major_angles)) # [S, R, 2, 2]
-        section_birefringences = xp.array(self.section_birefringences[:, :, None, None]) # [S, R, 1, 1, 1]
-        frequency_angular = frequency_angular[None, :, None] # Prepare extra dimensions for later calculations, [1, 1, F, 1, 1]
+        section_DGDs = xp.array(self.section_DGD[:, :, None, None]) # Prepare extra dimensions for later calculations
+        section_major_rotations = xp.array(rotation_matrix(self.section_major_angles)[:, :, None])
+        section_birefringences = xp.array(self.section_birefringences[:, :, None, None])
+        frequency_angular = frequency_angular[None, :, None]
 
         # iterable = section_matrices
         iterable = zip(section_DGDs, section_major_rotations, section_birefringences)
@@ -129,7 +132,7 @@ class FibreMarcuse(Fibre):
         for section_DGD, section_major_rotation, section_birefringence in iterable:
             # Rotate to local birefringence axes
             Jones_matrix = xp.einsum(
-                'rpq,rswq->rswp',
+                'rspq,rsqw->rspw',
                 section_major_rotation,
                 Jones_matrix,
                 optimize = True
@@ -137,16 +140,14 @@ class FibreMarcuse(Fibre):
 
             # Apply differential phase
             differential_phase = xp.exp(-0.5j * (section_birefringence + section_DGD * frequency_angular * 1e-12))
-            Jones_matrix[:, :, :, 0] *= differential_phase
-            Jones_matrix[:, :, :, 1] *= differential_phase.conjugate()
+            Jones_matrix *= xp.stack([differential_phase, differential_phase.conjugate()], axis = 2)
 
             # Rotate back
             Jones_matrix = xp.einsum(
-                'rpq,rswq->rswp',
-                section_major_rotation.transpose((0, 2, 1)),
+                'rspq,rsqw->rspw',
+                section_major_rotation.transpose((0, 1, 3, 2)),
                 Jones_matrix,
                 optimize = True
             )
-
-        Jones_matrix = xp.transpose(Jones_matrix, (0, 1, 3, 2))
+            
         return Jones_matrix

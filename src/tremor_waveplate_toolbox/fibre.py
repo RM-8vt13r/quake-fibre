@@ -111,14 +111,14 @@ class Fibre(ABC):
         """
         pass
 
-    def __call__(self, signal: Signal, strain: np.ndarray = None, verbose: bool = False) -> Signal:
+    def __call__(self, signal: Signal, strain: np.ndarray = None, transmission_time: float = 0, verbose: bool = False) -> Signal:
         """
         Make fibre instances callable; see propagate()
         """
-        return self.propagate(signal, strain, verbose)
+        return self.propagate(signal, strain, transmission_time, verbose)
 
     @abstractmethod
-    def propagate(self, signal: Signal, strain: Signal, verbose: bool = False) -> Signal:
+    def propagate(self, signal: Signal, strain: Signal, transmission_time: float = 0, verbose: bool = False) -> Signal:
         """
         Propagate a polarisation-multiplexed phase-multiplexed signal through the fibre.
         Multiple fibre realisations are applied at once.
@@ -127,6 +127,7 @@ class Fibre(ABC):
         Inputs:
         - signal [Signal]: the signal to propagate through the channel in the time domain, shape [R,B,S,P] with number of realisations R or R = 1, batch size B, sample count S and principal polarisations P = 2.
         - strain [Signal]: If not None, contains longitudinal strain values per fibre section over time; shape [F,T] with fibre sections F and strain samples T
+        - transmission_time [float]: timestamp at which the signal transmission begins in s
         - verbose [bool]: whether to show a progress bar
 
         Outputs:

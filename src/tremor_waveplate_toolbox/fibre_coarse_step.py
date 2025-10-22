@@ -57,16 +57,17 @@ class FibreCoarseStep(Fibre):
         self._section_birefringences = None
 
     @override
-    def propagate(self, signal: Signal, strain: Signal = None, verbose: bool = False) -> np.ndarray:
+    def propagate(self, signal: Signal, strain: Signal = None, transmission_time: float = 0, verbose: bool = False) -> np.ndarray:
         """
         This model applies a differential group delay and scrambles the state of polarisation randomly in every fibre section.
         """
-        assert strain is None, f"earthquake functionality not implemented yet"
-
         if signal.device == Device.CUDA: signal.to_device(Device.CUDA) # Ensure that the signal resides in the currently active cupy GPU
+        if strain is not None:
+            strain.to_device(signal.device)
+            #
 
-        section_DGDs = signal.xp.array(self.section_DGD)
-        section_PSPs = signal.xp.array(self.section_PSP)
+        section_DGDs = signal.xp.array(self.section_DGD[:, :, None, None])
+        section_PSPs = signal.xp.array(self.section_PSP[:, :, None])
 
         signal = signal.copy()
         signal.samples_frequency = signal.xp.tile(signal.samples_frequency, (self.realisation_count, 1, 1, 1))
@@ -83,13 +84,12 @@ class FibreCoarseStep(Fibre):
 
         for section_DGD, section_PSP in iterable:
             # Apply section DGD
-            DGD = signal.xp.exp(-0.5j * section_DGD[:, None, None] * frequency_angular * 1e-12)
-            signal.samples_frequency[..., 0] *= DGD
-            signal.samples_frequency[..., 1] *= DGD.conjugate()
+            DGD = signal.xp.exp(-0.5j * section_DGD * frequency_angular * 1e-12)
+            signal.samples_frequency *= signal.xp.stack([DGD, DGD.conjugate()], axis = 3)
 
             # Scramble SOP
             signal.samples_frequency = signal.xp.einsum(
-                'rpq,rbsq->rbsp',
+                'rbpq,rbsq->rbsp',
                 section_PSP,
                 signal.samples_frequency,
                 optimize = True
@@ -108,7 +108,7 @@ class FibreCoarseStep(Fibre):
             xp = np
 
         section_DGDs = xp.array(self.section_DGD[:, :, None, None])
-        section_PSPs = xp.array(self.section_PSP)
+        section_PSPs = xp.array(self.section_PSP[:, :, None])
         frequency_angular = frequency_angular[None, :, None] # Prepare extra dimensions for later calculations
 
         iterable = zip(section_DGDs, section_PSPs)
@@ -124,13 +124,11 @@ class FibreCoarseStep(Fibre):
         for section_DGD, section_PSP in iterable:
             # Apply section DGD
             differential_phase = xp.exp(-0.5j * section_DGD * frequency_angular * 1e-12)
-            
-            Jones_matrix[:, :, 0, :] *= differential_phase
-            Jones_matrix[:, :, 1, :] *= differential_phase.conjugate()
+            Jones_matrix *= xp.stack([differential_phase, differential_phase.conjugate()], axis = 2)
 
             # Scramble SOP
             Jones_matrix = xp.einsum(
-                'rpq,rfqs->rfps',
+                'rspq,rsqw->rspw',
                 section_PSP,
                 Jones_matrix,
                 optimize = True

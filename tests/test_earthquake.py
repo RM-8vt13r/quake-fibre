@@ -30,10 +30,14 @@ def test_earthquake():
     fibre      = FibreCoarseStep(parameters)
     earthquake = Earthquake(parameters)
 
-    times, displacements_normal, displacements_longitude, displacements_latitude, displacements_projected, strains_projected = earthquake.request_fibre_section_projected_strain(fibre, True)
-    assert len(times.shape) == 1, f"times should have one dimension, but had shape {times.shape}"
-    assert fibre.section_count + 1 == displacements_normal.shape[0], f"fibre section count + 1 should match the first dimension of displacements_normal, but these were {fibre.section_count} and {displacements_normal.shape}"
-    assert times.shape[0] == displacements_normal.shape[1], f"times length should match the second dimension of displacements_normal, but these were {len(times)} and {displacements_normal.shape}"
-    assert displacements_normal.shape == displacements_longitude.shape and displacements_normal.shape == displacements_latitude.shape, f"displacements_normal, displacements_longitude, and displacements_latitude should have the same shapes, but had shapes {displacements_normal.shape}, {displacements_longitude.shape} and {displacements_latitude.shape}"
-    assert displacements_projected.shape == (displacements_normal.shape[0] - 1, displacements_normal.shape[1], 2), f"displacements_projected and displacements_normal should have shapes [S, T, 2] and [S + 1, T], but had shapes {displacements_projected.shape} and {displacements_normal.shape}"
-    assert strains_projected.shape == displacements_projected.shape[:-1], f"strains_projected and displacements_projected should have shapes [S, T] and [S, T, 2], but had shapes {strains_projected.shape} and {displacements_projected.shape}"
+    displacements_local, displacements_global, displacements_projected, strains_projected = earthquake.request_fibre_section_projected_strain(fibre, True)
+    # assert len(times.shape) == 1, f"times should have one dimension, but had shape {times.shape}"
+    assert displacements_local.shape[0] == fibre.section_count + 1, f"fibre section count + 1 should match the first dimension of displacements_local, but these were {fibre.section_count} and {displacements_local.shape}"
+    assert displacements_local.shape[2] == 3, f"displacements_local should have three channels (normal, longitude, latitude), but had {displacements_local.shape[2]}"
+    assert displacements_global.shape[0] == fibre.section_count + 1, f"fibre section count + 1 should match the first dimension of displacements_global, but these were {fibre.section_count} and {displacements_global.shape}"
+    assert displacements_global.shape[2] == 3, f"displacements_global should have three channels (normal, longitude, latitude), but had {displacements_global.shape[2]}"
+    # assert times.shape[0] == displacements_normal.shape[1], f"times length should match the second dimension of displacements_normal, but these were {len(times)} and {displacements_normal.shape}"
+    # assert displacements_normal.shape == displacements_longitude.shape and displacements_normal.shape == displacements_latitude.shape, f"displacements_normal, displacements_longitude, and displacements_latitude should have the same shapes, but had shapes {displacements_normal.shape}, {displacements_longitude.shape} and {displacements_latitude.shape}"
+    assert displacements_local.shape == displacements_global.shape, f"displacements_local and displacements_global should have the same shapes, but had shapes {displacements_local.shape} and {displacements_global.shape}"
+    assert displacements_projected.shape == (displacements_local.shape[0] - 1, displacements_local.shape[1], 2), f"displacements_projected and displacements_local should have shapes [S, T, 2] and [S + 1, T, 3], but had shapes {displacements_projected.shape} and {displacements_local.shape}"
+    assert strains_projected.shape == [*displacements_projected.shape[:-1], 1], f"strains_projected and displacements_projected should have shapes [S, T, 1] and [S, T, 2], but had shapes {strains_projected.shape} and {displacements_projected.shape}"
