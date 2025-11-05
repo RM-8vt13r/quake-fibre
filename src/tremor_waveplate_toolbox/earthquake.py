@@ -40,19 +40,20 @@ class Earthquake:
             else:
                 raise e
 
-    def __call__(self, fibre: Fibre, verbose: bool = False):
+    def __call__(self, fibre: Fibre, batch_size: int = 100, verbose: bool = False):
         """
         See request_fibre_section_projected_strain()
         """
-        return self.request_fibre_section_projected_strain(fibre, verbose)
+        return self.request_fibre_section_projected_strain(fibre, batch_size, verbose)
 
-    def request_seismograms(self, longitudes: np.ndarray, latitudes: np.ndarray, verbose: bool = False):
+    def request_seismograms(self, longitudes: np.ndarray, latitudes: np.ndarray, batch_size: int = 100, verbose: bool = False):
         """
         Request seismograms from Syngine at specified coordinates.
 
         Inputs:
         - longitudes [np.ndarray]: coordinate longitudes, length C
         - latitude [np.ndarray]: coordinate latitudes, length C
+        - batch_size [int]: how many seismograms to request simultaneously
         - verbose: whether to print requesting progress
 
         Outputs:
@@ -64,14 +65,23 @@ class Earthquake:
 
         if verbose: print(f"Requesting seismograms from Syngine at {len(longitudes)} coordinates along the fibre. This may take a while..")
         try:
-            syngine_stream = self._syngine_client.get_waveforms_bulk(
-                model = self.model,
-                bulk = [{
-                    'longitude': longitude,
-                    'latitude': latitude
-                } for longitude, latitude in zip(longitudes, latitudes)],
-                eventid = self.event
-            )
+            batch_count = int(np.ceil(longitudes.shape[0] / batch_size))
+
+            syngine_stream = op.core.stream.Stream()
+            for batch_index in range(batch_count):
+                batch_start = batch_index * batch_size
+                batch_stop  = min(batch_start + batch_size, longitudes.shape[0])
+                if verbose: print(f"Requesting seismograms at coordinates {batch_start + 1}-{batch_stop} (batch {batch_index + 1} of {batch_count}).")
+                syngine_stream += self._syngine_client.get_waveforms_bulk(
+                    model = self.model,
+                    bulk = [{
+                        'longitude': longitude,
+                        'latitude': latitude
+                    } for longitude, latitude in zip(longitudes[batch_start:batch_stop], latitudes[batch_start:batch_stop])],
+                    eventid = self.event
+                )
+                # import pdb
+                # pdb.set_trace()
 
         except ClientHTTPException as e:
             if 'HTTP code 404' in str(e):
@@ -114,38 +124,41 @@ class Earthquake:
             sample_rate = 1 / sample_time
         )
 
-    def request_fibre_path_seismograms(self, fibre: Fibre, verbose: bool = False):
+    def request_fibre_path_seismograms(self, fibre: Fibre, batch_size: int = 100, verbose: bool = False):
         """
         Request seismograms from Syngine at fibre path segment coordinates.
 
         Inputs:
         - fibre: the fibre at which sections to request earthquakes. The fibre must be initialised with path coordinates.
+        - batch_size [int]: how many seismograms to request simultaneously
         - verbose: whether to print requesting progress
 
         Outputs:
         - [Signal] signal containing all three displacement components in m, shape [P+1, T, D] with number of path segments P and where D = 3 indexes longitudinal, latitudinal, and normal components in that order
         """
-        return self.request_seismograms(*fibre.path_coordinates.T, verbose)
+        return self.request_seismograms(*fibre.path_coordinates.T, batch_size, verbose)
 
-    def request_fibre_section_seismograms(self, fibre: Fibre, verbose: bool = False):
+    def request_fibre_section_seismograms(self, fibre: Fibre, batch_size: int = 100, verbose: bool = False):
         """
         Request seismograms from Syngine at fibre section coordinates.
 
         Inputs:
         - fibre: the fibre at which sections to request earthquakes. The fibre must be initialised with path coordinates.
+        - batch_size [int]: how many seismograms to request simultaneously
         - verbose: whether to print requesting progress
 
         Outputs:
         - [Signal] signal containing all three displacement components in m, shape [S+1, T, D] with number of fibre sections S and where D = 3 indexes longitudinal, latitudinal, and normal components in that order
         """
-        return self.request_seismograms(*fibre.section_coordinates.T, verbose)
+        return self.request_seismograms(*fibre.section_coordinates.T, batch_size, verbose)
 
-    def request_fibre_section_projected_seismogram(self, fibre: Fibre, verbose: bool = False):
+    def request_fibre_section_projected_seismogram(self, fibre: Fibre, batch_size: int = 100, verbose: bool = False):
         """
         Request seismograms from Syngine at fibre section coordinates, projected onto the direction of each fibre section.
 
         Inputs:
         - fibre: the fibre at which sections to request earthquakes. The fibre must be initialised with path coordinates.
+        - batch_size [int]: how many seismograms to request simultaneously
         - verbose: whether to print requesting progress
 
         Outputs:
@@ -153,7 +166,7 @@ class Earthquake:
         - [Signal] signal containing all three displacement components in m, relative to global coordinates, shape [S+1, T, D] where D = 3 indexes x, y, and z components in that order
         - [Signal] signal containing displacement in m projected onto the fibre, shape [S, T, E] where E = 2 distinguighes between section beginnings and ends
         """
-        displacements_local = self.request_fibre_section_seismograms(fibre, verbose)
+        displacements_local = self.request_fibre_section_seismograms(fibre, batch_size, verbose)
 
         # Calculate Cartesian global fibre section direction vectors
         section_endpoints_longitudes, section_endpoints_latitudes = fibre.section_coordinates.T
@@ -197,13 +210,14 @@ class Earthquake:
 
         return displacements_local, displacements_global, displacements_projected
         
-    def request_fibre_section_projected_strain(self, fibre: Fibre, verbose: bool = False):
+    def request_fibre_section_projected_strain(self, fibre: Fibre, batch_size: int = 100, verbose: bool = False):
         """
         Request seismograms from Syngine at fibre section coordinates, projected onto the direction of each fibre section.
         Differentiate the projected seismogram to obtain material strain.
 
         Inputs:
         - fibre: the fibre at which sections to request earthquakes. The fibre must be initialised with path coordinates.
+        - batch_size [int]: how many seismograms to request simultaneously
         - verbose: whether to print requesting progress
 
         Outputs:
@@ -212,7 +226,7 @@ class Earthquake:
         - [Signal] signal containing displacement in m projected onto the fibre, shape [S, T, E] where E = 2 distinguighes between section beginnings and ends
         - [Signal] signal containing strain projected onto the fibre, shape [S, T, 1]
         """
-        displacements_local, displacements_global, displacements_projected = self.request_fibre_section_projected_seismogram(fibre, verbose)
+        displacements_local, displacements_global, displacements_projected = self.request_fibre_section_projected_seismogram(fibre, batch_size, verbose)
 
         strains_projected = Signal(
             samples = np.diff(displacements_projected.samples_time, axis = 2) / fibre.section_lengths[:, None, None],
