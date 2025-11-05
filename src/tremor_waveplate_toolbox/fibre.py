@@ -7,6 +7,7 @@ import json
 from abc import ABC, abstractmethod
 
 import numpy as np
+import scipy as sp
 import obspy as op
 import refractiveindex
 
@@ -111,14 +112,14 @@ class Fibre(ABC):
         """
         pass
 
-    def __call__(self, signal: Signal, strain: np.ndarray = None, transmission_time: float = 0, verbose: bool = False) -> Signal:
+    def __call__(self, signal: Signal, strain: np.ndarray = None, transmission_start_time: float = 0, verbose: bool = False) -> Signal:
         """
         Make fibre instances callable; see propagate()
         """
-        return self.propagate(signal, strain, transmission_time, verbose)
+        return self.propagate(signal, strain, transmission_start_time, verbose)
 
     @abstractmethod
-    def propagate(self, signal: Signal, strain: Signal, transmission_time: float = 0, verbose: bool = False) -> Signal:
+    def propagate(self, signal: Signal, strain: Signal = None, transmission_start_time: float = 0, verbose: bool = False) -> Signal:
         """
         Propagate a polarisation-multiplexed phase-multiplexed signal through the fibre.
         Multiple fibre realisations are applied at once.
@@ -127,7 +128,7 @@ class Fibre(ABC):
         Inputs:
         - signal [Signal]: the signal to propagate through the channel in the time domain, shape [R,B,S,P] with number of realisations R or R = 1, batch size B, sample count S and principal polarisations P = 2.
         - strain [Signal]: If not None, contains longitudinal strain values per fibre section over time; shape [F,T] with fibre sections F and strain samples T
-        - transmission_time [float]: timestamp at which the signal transmission begins in s
+        - transmission_start_time [float]: timestamp at which the signal transmission begins in s
         - verbose [bool]: whether to show a progress bar
 
         Outputs:
@@ -136,19 +137,33 @@ class Fibre(ABC):
         pass
 
     @abstractmethod
-    def Jones(self, frequency_angular: (np.ndarray), verbose: bool = False) -> np.ndarray:
+    def Jones(self, frequency_angular: (np.ndarray), strain: Signal = None, transmission_start_time: float = 0, verbose: bool = False) -> np.ndarray:
         """
         Calculate the fibre Jones matrix in the absence of external perturbations.
         The calculations will be done on the device (CPU or GPU) that signal resides in (see Signal.to_device())
 
         Inputs:
         - frequency_angular [np.ndarray, cp.ndarray]: frequencies in rad/s at which to calculate the jones matrix, relative to the carrier frequency, shape [F,]
+        - strain [Signal]: If not None, contains longitudinal strain values per fibre section over time; shape [F,T] with fibre sections F and strain samples T
+        - transmission_start_time [float]: timestamp at which the signal transmission begins in s
         - verbose [bool]: whether to show a progress bar
 
         Outputs:
         - [np.ndarray, cp.ndarray]: the Jones matrices, shape [R,F,2,2]
         """
         pass
+
+    def group_velocity(self, signal: Signal):
+        """
+        Obtain the fibre propagation constant (inverse of group velocity) for a specific signal in km/s
+
+        Inputs:
+        - signal [Signal]: the signal for which to obtain the propagation constant
+
+        Outputs:
+        - [float] group velocity in km/s
+        """
+        return sp.constants.speed_of_light / self.material.get_refractive_index(signal.carrier_wavelength) / 1000
 
     def to_dict(self) -> dict:
         """
@@ -439,6 +454,17 @@ class Fibre(ABC):
     @photoelasticity.setter
     def photoelasticity(self, value):
         raise AttributeError("The photoelasticity constant cannot be changed after instantiation of the Fibre")
+
+    @property
+    def material(self):
+        """
+        [RefractiveIndexMaterial] The fibre material, used to determine group velocity from carrier wavelength.
+        """
+        return self._material
+
+    @material.setter
+    def material(self, value):
+        raise AttributeError("The fibre material cannot be changed after instantiation")
 
     @property
     def section_DGD(self) -> np.ndarray:

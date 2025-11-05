@@ -57,15 +57,14 @@ class FibreCoarseStep(Fibre):
         self._section_birefringences = None
 
     @override
-    def propagate(self, signal: Signal, strain: Signal = None, transmission_time: float = 0, verbose: bool = False) -> np.ndarray:
+    def propagate(self, signal: Signal, strain: Signal = None, transmission_start_time: float = 0, verbose: bool = False) -> np.ndarray:
         """
         This model applies a differential group delay and scrambles the state of polarisation randomly in every fibre section.
         """
-        if signal.device == Device.CUDA: signal.to_device(Device.CUDA) # Ensure that the signal resides in the currently active cupy GPU
-        if strain is not None:
-            strain.to_device(signal.device)
-            #
+        assert strain is None, f"strain-perturbed propagation not implemented yet for the coarse-step method"
 
+        if signal.device == Device.CUDA: signal.to_device(Device.CUDA) # Ensure that the signal resides in the currently active cupy GPU
+        
         section_DGDs = signal.xp.array(self.section_DGD[:, :, None, None])
         section_PSPs = signal.xp.array(self.section_PSP[:, :, None])
 
@@ -83,9 +82,10 @@ class FibreCoarseStep(Fibre):
             )
 
         for section_DGD, section_PSP in iterable:
-            # Apply section DGD
-            DGD = signal.xp.exp(-0.5j * section_DGD * frequency_angular * 1e-12)
-            signal.samples_frequency *= signal.xp.stack([DGD, DGD.conjugate()], axis = 3)
+            if self.PMD_parameter != 0:
+                # Apply section DGD
+                DGD = signal.xp.exp(-0.5j * section_DGD * frequency_angular * 1e-12)
+                signal.samples_frequency *= signal.xp.stack([DGD, DGD.conjugate()], axis = 3)
 
             # Scramble SOP
             signal.samples_frequency = signal.xp.einsum(
@@ -98,7 +98,8 @@ class FibreCoarseStep(Fibre):
         return signal
 
     @override
-    def Jones(self, frequency_angular: (np.ndarray), verbose: bool = False) -> np.ndarray:
+    def Jones(self, frequency_angular: (np.ndarray), strain: Signal = None, transmission_start_time: float = 0, verbose: bool = False) -> np.ndarray:
+        assert strain is None, f"strain-perturbed propagation not implemented yet for the coarse-step method"
         assert len(frequency_angular.shape) == 1, f"frequency_angular must have shape [F,], but had shape {frequency_angular.shape}"
 
         if 'cupy' in sys.modules and isinstance(frequency_angular, cp.ndarray):
@@ -122,9 +123,10 @@ class FibreCoarseStep(Fibre):
         
         Jones_matrix = xp.tile(xp.eye(2, dtype = complex)[None, None], (self.realisation_count, frequency_angular.shape[1], 1, 1))
         for section_DGD, section_PSP in iterable:
-            # Apply section DGD
-            differential_phase = xp.exp(-0.5j * section_DGD * frequency_angular * 1e-12)
-            Jones_matrix *= xp.stack([differential_phase, differential_phase.conjugate()], axis = 2)
+            if self.PMD_parameter != 0:
+                # Apply section DGD
+                differential_phase = xp.exp(-0.5j * section_DGD * frequency_angular * 1e-12)
+                Jones_matrix *= xp.stack([differential_phase, differential_phase.conjugate()], axis = 2)
 
             # Scramble SOP
             Jones_matrix = xp.einsum(
