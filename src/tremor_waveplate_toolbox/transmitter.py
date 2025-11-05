@@ -32,18 +32,19 @@ class Transmitter:
         self.power_dBm       = parameters.getfloat('TRANSCEIVER', 'power')
         self.upsample_factor = int(parameters.getfloat('TRANSCEIVER', 'upsample_factor'))
 
-    def __call__(self, symbols: np.ndarray) -> Signal:
+    def __call__(self, symbols: np.ndarray, carrier_wavelength: float = 1550.) -> Signal:
         """
         See transmit_symbols
         """
-        return self.transmit_symbols(symbols)
+        return self.transmit_symbols(symbols, carrier_wavelength)
 
-    def transmit_symbols(self, symbols: np.ndarray) -> Signal:
+    def transmit_symbols(self, symbols: np.ndarray, carrier_wavelength: float = 1550.) -> Signal:
         """
         Pulseshape and amplify a given sequence of symbols
 
         Inputs:
         - symbols [np.ndarray]: the unit-power sequence of symbols to transmit, shape [B,S,P] where B is batch size, S is the sequence length, and P = 2 indexes two orthogonal polarisations.
+        - carrier_wavelength [float]: the signal carrier wavelength in nm
 
         Outputs:
         - [Signal]: modulated symbols as a Signal, shape [R,B,S,P]
@@ -59,7 +60,8 @@ class Transmitter:
         # Upsample to sample space
         samples = Signal(
             samples = np.zeros([*symbols.shape[:-2], self.upsample_factor * symbols.shape[-2], symbols.shape[-1]]),
-            sample_rate = self.upsample_factor * self.pulse.symbol_rate
+            sample_rate = self.upsample_factor * self.pulse.symbol_rate,
+            carrier_wavelength = carrier_wavelength
         )
         samples.samples_time[..., ::self.upsample_factor, :] = symbols.samples_time
 
@@ -71,13 +73,14 @@ class Transmitter:
 
         return symbols, samples
 
-    def transmit_random(self, batch_size: int, symbol_count: int) -> Signal:
+    def transmit_random(self, batch_size: int, symbol_count: int, carrier_wavelength: float = 1550.) -> Signal:
         """
         Generate a random pulseshaped sequence.
 
         Inputs:
         - batch_size: the signal batch size B
         - symbol_count: the number of symbols S per batch sample
+        - carrier_wavelength [float]: the signal carrier wavelength in nm
 
         Outputs:
         - [Signal]: modulated symbols as a Signal, shape [R,B,S,P] with number of fibre realisations R = 1 and number of orthogonal polarisations P = 2
@@ -85,7 +88,7 @@ class Transmitter:
         """
         # Sample symbol array from constellation
         symbols = self.constellation((batch_size, symbol_count, 2))
-        return self.transmit_symbols(symbols)
+        return self.transmit_symbols(symbols, carrier_wavelength)
 
     @property
     def constellation(self) -> const.Constellation:

@@ -18,7 +18,8 @@ class Signal:
     def __init__(self,
             samples: np.ndarray,
             sample_rate: float,
-            domain: Domain = Domain.TIME
+            domain: Domain = Domain.TIME,
+            carrier_wavelength: float = np.inf
         ):
         """
         Create a new Signal.
@@ -27,6 +28,8 @@ class Signal:
         - samples [np.ndarray] or [cp.ndarray]: signal samples, shape [...,S,C] with arbitrary dimensions ..., sample count S, and component count C (e.g. 2 polarisations, 3 seismograms, etc).
         - sample_rate [float]: the sample frequency in Hz.
         - domain [Domain]: domain (time or frequency) in which samples is given.
+        - carrier_wavelength [float]: carrier wavelength in nm; inf if the signal is not modulated.
+
         """
         assert isinstance(domain, Domain), f"domain must be a Domain, but was a {type(domain)}"
         # assert isinstance(device, Device), f"device must be a Device, but was a {type(device)}"
@@ -34,6 +37,7 @@ class Signal:
         self._device = Device.CPU if isinstance(samples, np.ndarray) else Device.CUDA
         self.samples = samples
         self.sample_rate = sample_rate
+        self.carrier_wavelength = carrier_wavelength
 
     def copy(self):
         """
@@ -42,7 +46,8 @@ class Signal:
         return Signal(
             self.samples.copy(),
             self.sample_rate,
-            self.domain
+            self.domain,
+            self.carrier_wavelength
         )
 
     def to_domain(self, domain: Domain):
@@ -166,6 +171,44 @@ class Signal:
         raise AttributeError("Cannot set domain directly; use to_domain instead.")
 
     @property
+    def carrier_wavelength(self):
+        """
+        [float] the signal carrier wavelength in nm, infinity (np.inf) if the signal is unmodulated.
+        """
+        return self._carrier_wavelength
+
+    @carrier_wavelength.setter
+    def carrier_wavelength(self, value):
+        assert isinstance(value, (int, float)), f"New carrier_wavelength must be a float, but was {type(value)}."
+        assert value > 0, f"New carrier_wavelength must be larger than 0, but was {value}."
+        self._carrier_wavelength = value
+
+    @property
+    def carrier_frequency(self):
+        """
+        [float] the signal carrier frequency in Hz, 0 if the signal is unmodulated.
+        """
+        return 0 if self.carrier_wavelength == np.inf else sp.constants.speed_of_light / self.carrier_wavelength * 1e9
+
+    @carrier_frequency.setter
+    def carrier_frequency(self, value):
+        assert isinstance(value, (int, float)), f"New carrier_frequency must be a float, but was {type(value)}."
+        assert value >= 0, f"New carrier_frequency must be at least 0, but was {value}."
+        assert value < np.inf, f"New carrier_frequency may not be infinity"
+        self._carrier_wavelength = sp.constants.speed_of_light / value * 1e9
+
+    @property
+    def carrier_frequency_angular(self):
+        """
+        [float] the signal carrier frequency in Rad/s, 0 if the signal is unmodulated.
+        """
+        return 2 * np.pi * self.carrier_frequency
+
+    @carrier_frequency_angular.setter
+    def carrier_frequency_angular(self, value):
+        self.carrier_frequency = value / (2 * np.pi)
+
+    @property
     def samples_time(self) -> np.ndarray:
         """
         [np.ndarray, cp.ndarray] The signal samples in the time domain, shape [...,S,P]
@@ -201,7 +244,7 @@ class Signal:
     @sample_rate.setter
     def sample_rate(self, value):
         assert isinstance(value, (float, int)), f"New sample rate must have type float, but was {type(value)}"
-        assert value > 0, f"New sample rate must be larger than 0, but was {type(value)}"
+        assert value > 0, f"New sample rate must be larger than 0, but was {value}"
         self._sample_rate = float(value)
 
     @property
@@ -213,7 +256,7 @@ class Signal:
 
     @sample_time.setter
     def sample_time(self, value):
-        self.sample_rate = 1  / value
+        self.sample_rate = 1 / value
 
     @property
     def time(self) -> np.ndarray:
@@ -225,6 +268,17 @@ class Signal:
     @time.setter
     def time(self, value):
         raise AttributeError(f"time cannot be set directly; set sample_time or sample_rate instead")
+
+    @property
+    def duration(self):
+        """
+        [float] entire signal duration in s
+        """
+        return (self.shape[-2] - 1) * self.sample_time
+
+    @duration.setter
+    def duration(self, value):
+        raise AttributeError(f"duration cannot be set directly; use interpolated() instead")
 
     @property
     def frequency(self) -> np.ndarray:

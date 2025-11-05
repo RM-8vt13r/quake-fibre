@@ -7,7 +7,6 @@ from configparser import ConfigParser
 import numpy as np
 
 from .signal import Signal
-from . import constellation as const
 from . import pulse
 
 class Receiver:

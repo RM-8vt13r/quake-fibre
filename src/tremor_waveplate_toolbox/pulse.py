@@ -73,7 +73,8 @@ class Pulse(ABC):
         return Signal(
             samples = signal.samples_frequency * self.pulse_frequency(signal.frequency)[None, None, :, None] * np.sqrt(signal.sample_rate),
             sample_rate = signal.sample_rate,
-            domain = Domain.FREQUENCY
+            domain = Domain.FREQUENCY,
+            carrier_wavelength = signal.carrier_wavelength
         )
 
     def modulate_time(self, signal: Signal) -> Signal:
