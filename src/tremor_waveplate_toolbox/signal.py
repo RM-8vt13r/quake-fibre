@@ -18,6 +18,7 @@ class Signal:
     def __init__(self,
             samples: np.ndarray,
             sample_rate: float,
+            sample_axis: int = -2,
             domain: Domain = Domain.TIME,
             carrier_wavelength: float = np.inf
         ):
@@ -25,8 +26,9 @@ class Signal:
         Create a new Signal.
 
         Inputs:
-        - samples [np.ndarray] or [cp.ndarray]: signal samples, shape [...,S,C] with arbitrary dimensions ..., sample count S, and component count C (e.g. 2 polarisations, 3 seismograms, etc).
+        - samples [np.ndarray] or [cp.ndarray]: signal samples, shape [...,S,*C] with arbitrary dimensions ..., sample count S, and component counts *C (e.g. 2 polarisations, 3 seismograms, [2, 2] matrix elements, etc).
         - sample_rate [float]: the sample frequency in Hz.
+        - sample_axis [int]: the index of axis S in the shape of samples
         - domain [Domain]: domain (time or frequency) in which samples is given.
         - carrier_wavelength [float]: carrier wavelength in nm; inf if the signal is not modulated.
 
@@ -37,6 +39,7 @@ class Signal:
         self._device = Device.CPU if isinstance(samples, np.ndarray) else Device.CUDA
         self.samples = samples
         self.sample_rate = sample_rate
+        self.sample_axis = sample_axis
         self.carrier_wavelength = carrier_wavelength
 
     def copy(self):
@@ -46,6 +49,7 @@ class Signal:
         return Signal(
             self.samples.copy(),
             self.sample_rate,
+            self.sample_axis,
             self.domain,
             self.carrier_wavelength
         )
@@ -58,9 +62,9 @@ class Signal:
 
         match domain:
             case Domain.TIME:
-                self.samples = self.xp.fft.ifft(self.samples.copy(), axis = -2, norm = 'ortho')
+                self.samples = self.xp.fft.ifft(self.samples.copy(), axis = self.sample_axis, norm = 'ortho')
             case Domain.FREQUENCY:
-                self.samples = self.xp.fft.fft(self.samples.copy(), axis = -2, norm = 'ortho')
+                self.samples = self.xp.fft.fft(self.samples.copy(), axis = self.sample_axis, norm = 'ortho')
 
         self._domain = domain
 
@@ -75,13 +79,13 @@ class Signal:
         old_sample_rate  = self.sample_rate
         self.sample_rate = new_sample_rate
 
-        old_signal_length = self.shape[-2]
-        new_signal_length = round(self.shape[-2] * self.sample_rate / old_sample_rate)
+        old_signal_length = self.shape[self.sample_axis]
+        new_signal_length = round(self.shape[self.sample_axis] * self.sample_rate / old_sample_rate)
         
-        new_samples_frequency = self.xp.zeros(shape = (*self.shape[:-2], new_signal_length, self.shape[-1]), dtype = complex)
+        new_samples_frequency = self.xp.zeros(shape = (*self.shape[:self.sample_axis], new_signal_length, *self.shape[self.sample_axis_nonnegative + 1:]), dtype = complex)
         sample_limit = int(min(old_signal_length, new_signal_length) / 2)
-        new_samples_frequency[..., :sample_limit, :]  = self.samples_frequency[..., :sample_limit, :]
-        new_samples_frequency[..., -sample_limit:, :] = self.samples_frequency[..., -sample_limit:, :]
+        new_samples_frequency[..., :sample_limit, *(slice(None),) * -(self.sample_axis_negative + 1)]  = self.samples_frequency[..., :sample_limit, *(slice(None),) * -(self.sample_axis_negative + 1)]
+        new_samples_frequency[..., -sample_limit:, *(slice(None),) * -(self.sample_axis_negative + 1)] = self.samples_frequency[..., -sample_limit:, *(slice(None),) * -(self.sample_axis_negative + 1)]
 
         self.samples_frequency = new_samples_frequency
 
@@ -89,7 +93,7 @@ class Signal:
         other_device = other.device
         other.to_domain(self.domain)
         other.to_device(self.device)
-        if self.samples.shape == other.samples.shape and \
+        if self.shape == other.shape and \
             self.xp.allclose(self.samples, other.samples) and \
             self.xp.isclose(self.sample_rate, other.sample_rate):
             other.to_device(other_device)
@@ -147,17 +151,66 @@ class Signal:
     @property
     def samples(self) -> np.ndarray:
         """
-        [np.ndarray, cp.ndarray] The signal samples in the current domain (time or frequency), shape [...,S,C] with arbitrary dimensions ..., signal length S, and component count C (e.g. 2 polarisations, 3 seismograms, etc).
+        [np.ndarray, cp.ndarray] The signal samples in the current domain (time or frequency), shape [...,S,*C] with arbitrary dimensions ..., signal length S, and component count C (e.g. 2 polarisations, 3 seismograms, [2, 2] matrix elements etc).
         """
         return self._samples
 
     @samples.setter
     def samples(self, value):
         assert isinstance(value, (np.ndarray)) or ('cupy' in sys.modules and isinstance(value, cp.ndarray)), f"New samples must have type np.ndarray or cp.ndarray (if cupy is available), but had {type(value)}"
-        assert len(value.shape) >= 2, f"New samples must have at least two dimensions ..., S and C, but had only {len(value.shape)}"
+        assert len(value.shape) >= 1, f"New samples must have at least one dimension ..., S and *C, but had only {len(value.shape)}"
         assert value.dtype in (complex, float, int), f"New samples must have datatype complex, but were {value.dtype}"
-        # assert '_samples' not in self.__dir__() or self._samples.shape[:-2] + self._samples.shape[-1:] == value.shape[:-2] + value.shape[-1:], f"All new samples dimensions must match the previous samples except dimension -2, but their dimensions were {self._samples.shape} and {value.shape}"
+        # assert '_samples' not in self.__dir__() or self.shape[:-2] + self.shape[-1:] == value.shape[:-2] + value.shape[-1:], f"All new samples dimensions must match the previous samples except dimension -2, but their dimensions were {self.shape} and {value.shape}"
         self._samples = self.xp.array(value.copy()).astype(complex)
+
+    @property
+    def sample_axis(self):
+        """
+        Returns the index of axis S
+        """
+        return self._sample_axis
+
+    @sample_axis.setter
+    def sample_axis(self, value):
+        assert isinstance(value, int), f"sample_axis must be an int, but was a {type(value)}"
+        assert value >= -len(self.shape), f"sample_axis must be at least -the number of sample dimensions (>= {-len(self.shape)}), but was {value}"
+        assert value < len(self.shape), f"sample_axis must be less than the number of sample dimensions (< {len(self.shape)}), but was {value}"
+        self._sample_axis = value
+
+    @property
+    def sample_axis_nonnegative(self):
+        """
+        Returns the index of axis S, enforcing that it's >= 0
+        """
+        return self._sample_axis % len(self.shape)
+
+    @sample_axis_nonnegative.setter
+    def sample_axis_nonnegative(self, value):
+        assert value >= 0, f"sample_axis_nonnegative must be >= 0, but was {value}"
+        self.sample_axis = value
+
+    @property
+    def sample_axis_negative(self):
+        """
+        Returns the index of axis S, enforcing that it's >= 0
+        """
+        return self.sample_axis_nonnegative - len(self.shape)
+
+    @sample_axis_negative.setter
+    def sample_axis_negative(self, value):
+        assert value < 0, f"sample_axis_negative must be < 0, but was {value}"
+        self.sample_axis = value
+
+    @property
+    def component_axes_count(self):
+        """
+        The number of component axes
+        """
+        return -self.sample_axis_negative - 1
+
+    @component_axes_count.setter
+    def component_axes_count(self, value):
+        raise AttributeError("component_axes_count cannot be set directly; make a new Signal instead")
 
     @property
     def domain(self) -> Domain:
@@ -263,7 +316,7 @@ class Signal:
         """
         [np.ndarray, cp.ndarray] sample times in seconds.
         """
-        return self.xp.arange(self.shape[-2]) / self.sample_rate
+        return self.xp.arange(self.shape[self.sample_axis]) / self.sample_rate
 
     @time.setter
     def time(self, value):
@@ -274,7 +327,7 @@ class Signal:
         """
         [float] entire signal duration in s
         """
-        return (self.shape[-2] - 1) * self.sample_time
+        return (self.shape[self.sample_axis] - 1) * self.sample_time
 
     @duration.setter
     def duration(self, value):
@@ -286,7 +339,7 @@ class Signal:
         [np.ndarray, cp.ndarray] Vector with sample frequencies in Hz, corresponding to samples_frequency
         """
         return self.xp.fft.fftfreq(
-            n = self.shape[-2],
+            n = self.shape[self.sample_axis],
             d = self.sample_time
         )
 
@@ -332,7 +385,7 @@ class Signal:
         """
         [np.ndarray, cp.ndarray] Signal energy, shape [...]
         """
-        return self.xp.sum(self.xp.linalg.norm(self.samples, axis = -1) ** 2, axis = -1)
+        return self.xp.linalg.norm(self.samples, axis = tuple(range(self.sample_axis_negative, 0))) ** 2
 
     @energy.setter
     def energy(self, value):
@@ -354,8 +407,8 @@ class Signal:
         """
         [np.ndarray, cp.ndarray] Signal power in W, shape [...]
         """
-        return self.energy / self.shape[-2]
+        return self.energy / self.shape[self.sample_axis]
 
     @power_W.setter
     def power_W(self, value):
-        self.energy = value * self.shape[-2]
+        self.energy = value * self.shape[self.sample_axis]

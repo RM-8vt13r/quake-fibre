@@ -4,14 +4,22 @@ An optical fibre channel model base class for dual-polarisation transmission.
 
 from configparser import ConfigParser
 import json
+import sys
 from abc import ABC, abstractmethod
 
 import numpy as np
 import scipy as sp
+try:
+    import cupy as cp
+except:
+    pass
 import obspy as op
 import refractiveindex
 
+from .constants import Device, Domain
+from .earthquake import Earthquake
 from .signal import Signal
+from .path import Path
 
 class Fibre(ABC):
     """
@@ -57,11 +65,13 @@ class Fibre(ABC):
         )
         
         if 'path_coordinates' in parameters['FIBRE']:
-            self._path_coordinates = np.array(json.loads(parameters.get('FIBRE', 'path_coordinates')), dtype = float)
+            self._path = Path(
+                    *np.array(json.loads(parameters.get('FIBRE', 'path_coordinates')), dtype = float).T
+                )
             self._section_count    = None
         else:
-            self._path_coordinates = None
-            self._section_count    = parameters.getint('FIBRE', 'section_count')
+            self._path          = None
+            self._section_count = parameters.getint('FIBRE', 'section_count')
 
         self._init_path()
         self._init_DGD()
@@ -71,33 +81,19 @@ class Fibre(ABC):
         """
         Initialise fibre- and section path information.
         """
-        if self._path_coordinates is not None:
-            self._path_lengths = np.array([
-                op.geodetics.base.calc_vincenty_inverse(*reversed(coordinate1), *reversed(coordinate2))[0] / 1000
-                for coordinate1, coordinate2 in zip(self.path_coordinates[:-1], self.path_coordinates[1:])
-            ])
-
-            self._path_positions    = np.append([0], np.cumsum(self.path_lengths))
-            self._section_positions = np.append(np.arange(0, self.path_positions[-1], self._section_length), self.path_positions[-1])
-            
-            section_longitudes        = np.interp(self.section_positions, self.path_positions, self.path_coordinates[:, 0])
-            section_latitudes         = np.interp(self.section_positions, self.path_positions, self.path_coordinates[:, 1])
-            self._section_coordinates = np.stack([section_longitudes, section_latitudes], axis = 1)
-
-            self._section_lengths = np.diff(self.section_positions)
+        if self._path is not None:
+            section_positions  = np.append(np.arange(0, self.path.positions[-1], self._section_length), self.path.positions[-1])
+            section_longitudes = np.interp(section_positions, self.path.positions, self.path.longitudes)
+            section_latitudes  = np.interp(section_positions, self.path.positions, self.path.latitudes)
+            self._section_path  = Path(section_longitudes, section_latitudes)
 
         else:
-            self._path_lengths           = None
-            self._path_positions         = None
-            self._section_coordinates    = None
-            self._section_lengths        = np.full(
-                shape      = (self._section_count,),
-                fill_value = self._section_length,
-                dtype      = float
-            )
+            self._section_path = Path(lengths = np.full(
+                    shape      = (self._section_count,),
+                    fill_value = self._section_length,
+                    dtype      = float
+                ))
 
-            self._section_positions      = np.append([0], np.cumsum(self.section_lengths))
-            
     @abstractmethod
     def _init_DGD(self):
         """
@@ -112,59 +108,119 @@ class Fibre(ABC):
         """
         pass
 
-    def __call__(self, signal: Signal, strain: np.ndarray = None, transmission_start_time: float = 0, verbose: bool = False) -> Signal:
+    def __call__(self, signal: Signal, transmission_start_time: float = 0, earthquake: Earthquake = None, earthquake_batch_size: int = 100, verbose: bool = False) -> Signal:
         """
         Make fibre instances callable; see propagate()
         """
-        return self.propagate(signal, strain, transmission_start_time, verbose)
+        return self.propagate(signal, transmission_start_time, earthquake, earthquake_batch_size, verbose)
 
-    @abstractmethod
-    def propagate(self, signal: Signal, strain: Signal = None, transmission_start_time: float = 0, verbose: bool = False) -> Signal:
+    def propagate(self, signal: Signal, transmission_start_time: float = 0, earthquake: Earthquake = None, earthquake_batch_size: int = 100, verbose: bool = False) -> Signal:
         """
         Propagate a polarisation-multiplexed phase-multiplexed signal through the fibre.
         Multiple fibre realisations are applied at once.
         The calculations will be done on the device (CPU or GPU) that signal resides in (see Signal.to_device())
 
         Inputs:
-        - signal [Signal]: the signal to propagate through the channel in the time domain, shape [R,B,S,P] with number of realisations R or R = 1, batch size B, sample count S and principal polarisations P = 2.
-        - strain [Signal]: If not None, contains longitudinal strain values per fibre section over time; shape [F,T] with fibre sections F and strain samples T
-        - transmission_start_time [float]: timestamp at which the signal transmission begins in s
+        - signal [Signal]: the signal to propagate through the channel, shape [R,B,S,P] with number of realisations R or R = 1, batch size B, sample count S and principal polarisations P = 2.
+        - transmission_start_time [float]: timestamp at which the signal transmission begins in s, relative to the start time of a potential earthquake
+        - earthquake [Earthquake]: If not None, model the strain of this earthquake during signal transmission
+        - earthquake_batch_size [int]: how many seismograms to request from Syngine at a time; should always be below 5000
         - verbose [bool]: whether to show a progress bar
 
         Outputs:
         - [Signal]: the output signal, shape [R,B,S,P]
         """
-        pass
+        assert signal.sample_axis_negative == -2, f"signal must have sample axis -2, but it was {signal.sample_axis_negative}"
+        assert signal.shape[-1] == 2, f"signal must have two polarisations on the last axis, but had {signal.shape[-1]}"
+        assert len(signal.shape) == 4, f"signal must have shape [R,B,S,P], but had shape {signal.shape}"
+        if signal.device == Device.CUDA: signal.to_device(Device.CUDA) # Ensure that the signal resides in the currently active cupy GPU
+        
+        signal = self._propagate_master(
+                signal,
+                signal.frequency_angular,
+                transmission_start_time,
+                earthquake,
+                earthquake_batch_size,
+                verbose
+            )
 
-    @abstractmethod
-    def Jones(self, frequency_angular: (np.ndarray), strain: Signal = None, transmission_start_time: float = 0, verbose: bool = False) -> np.ndarray:
+        return signal
+
+    def Jones(self, frequency_angular: (np.ndarray), carrier_wavelength: float = 1550., transmission_start_time: float = 0, earthquake: Earthquake = None, earthquake_batch_size = 100, verbose: bool = False) -> np.ndarray:
         """
-        Calculate the fibre Jones matrix in the absence of external perturbations.
-        The calculations will be done on the device (CPU or GPU) that signal resides in (see Signal.to_device())
+        Calculate the fibre Jones matrix.
+        The calculations will be done on the device (CPU or GPU) that frequency_angular resides in (see Signal.to_device())
+        The matrix will exclude any noise or nonlinear effects.
 
         Inputs:
         - frequency_angular [np.ndarray, cp.ndarray]: frequencies in rad/s at which to calculate the jones matrix, relative to the carrier frequency, shape [F,]
-        - strain [Signal]: If not None, contains longitudinal strain values per fibre section over time; shape [F,T] with fibre sections F and strain samples T
-        - transmission_start_time [float]: timestamp at which the signal transmission begins in s
-        - verbose [bool]: whether to show a progress bar
+        - carrier_wavelength [float]: carrier wavelength in nm
+        - transmission_start_time [float]: timestamp at which the signal transmission begins in s, relative to the start time of a potential earthquake
+        - earthquake [Earthquake]: If not None, hold on to your hats!
+        - earthquake_batch_size [int]: how many seismograms to request from Syngine at a time; should always be below 5000
+        - verbose [bool]: whether to print progress bars and messages
 
         Outputs:
         - [np.ndarray, cp.ndarray]: the Jones matrices, shape [R,F,2,2]
         """
+        if 'cupy' in sys.modules and isinstance(frequency_angular, cp.ndarray):
+            xp = cp
+            frequency_angular = xp.array(frequency_angular) # Ensure that the frequency array resides in the currently active cupy GPU
+        else:
+            xp = np
+
+        assert len(frequency_angular.shape) == 1, f"frequency_angular must have shape [F,], but had shape {frequency_angular.shape}"
+        
+        Jones_matrix_transposed = Signal(
+                samples = xp.eye(2, dtype = complex)[None, None],
+                sample_rate = 1, # Placeholder value
+                sample_axis = -3,
+                domain = Domain.FREQUENCY,
+                carrier_wavelength = carrier_wavelength
+            )
+
+        Jones_matrix_transposed = self._propagate_master(
+                Jones_matrix_transposed,
+                frequency_angular,
+                transmission_start_time,
+                earthquake,
+                earthquake_batch_size,
+                verbose
+            )
+
+        return xp.transpose(Jones_matrix_transposed.samples, (0, 1, 3, 2))
+
+    @abstractmethod
+    def _propagate_master(self, signal: Signal, frequency_angular: np.ndarray, transmission_start_time: float = 0, earthquake: Earthquake = None, earthquake_batch_size: int = 100, verbose: bool = False) -> Signal:
+        """
+        Method called by propagate() and Jones() to simulate the fibre response.
+
+        Inputs:
+        - signal [Signal]: the signal or transposed Jones matrix to propagate through the channel, shape [R,B,S,P] with number of realisations R or R = 1, batch size B, sample count S and principal polarisations P = 2, OR shape [R, S, P, P] where the last two axes contain Jones transfer matrices.
+        - frequency_angular [np.ndarray, cp.ndarray]: frequencies of the signal or Jones matrix in rad/s, relative to the carrier frequency, shape [S,]
+        - transmission_start_time [float]: timestamp at which the signal transmission begins in s, relative to the start time of a potential earthquake
+        - earthquake [Earthquake]: If not None, hold on to your hats!
+        - earthquake_batch_size [int]: how many seismograms to request from Syngine at a time; should always be below 5000
+        - verbose [bool]: whether to print progress bars and messages
+
+        Outputs:
+        - [Signal]: the output signal or transposed Jones matrix, same shape as signal
+        """
         pass
 
-    def group_velocity(self, signal: Signal):
+    def group_velocity(self, carrier_wavelength: float):
         """
         Obtain the fibre propagation constant (inverse of group velocity) for a specific signal in km/s
 
         Inputs:
-        - signal [Signal]: the signal for which to obtain the propagation constant
+        - carrier_wavelength [float]: the carrier wavelength at which to obtain the propagation constant
 
         Outputs:
         - [float] group velocity in km/s
         """
-        return sp.constants.speed_of_light / self.material.get_refractive_index(signal.carrier_wavelength) / 1000
+        return sp.constants.speed_of_light / self.material.get_refractive_index(carrier_wavelength) / 1000
 
+    @abstractmethod
     def to_dict(self) -> dict:
         """
         Represent this fibre (and its exact realisations) as a dictionary.
@@ -173,38 +229,24 @@ class Fibre(ABC):
         - [dict] The dictionary representation of this fibre
         """
         fibre_dict = {
-            'correlation_length':         self.correlation_length,
-            'beat_length':                self.beat_length,
-            'section_lengths':            self.section_lengths.tolist(),
-            'section_positions':          self.section_positions.tolist(),
-            'PMD_parameter':              self.PMD_parameter,
-            'realisation_count':          self.realisation_count,
-            'photoelasticity':            self.photoelasticity,
-            'section_DGD':                self.section_DGD.tolist()
+            'correlation_length': self.correlation_length,
+            'beat_length':        self.beat_length,
+            'section_path':       self.section_path.to_dict(),
+            'PMD_parameter':      self.PMD_parameter,
+            'realisation_count':  self.realisation_count,
+            'photoelasticity':    self.photoelasticity,
+            'section_DGD':        self.section_DGD.tolist()
         }
 
-        if self._section_major_angles is not None:
+        if self._path is not None:
             fibre_dict = fibre_dict | {
-                'section_major_angles':   self.section_major_angles.tolist(),
-                'section_birefringences': self.section_birefringences.tolist()
-            }
-
-        else:
-            fibre_dict = fibre_dict | {
-                'section_PSP': self.section_PSP.tolist()
-            }
-
-        if self._path_coordinates is not None:
-            fibre_dict = fibre_dict | {
-                'path_coordinates':    self.path_coordinates.tolist(),
-                'path_lengths':        self.path_lengths.tolist(),
-                'path_positions':      self.path_positions.tolist(),
-                'section_coordinates': self.section_coordinates.tolist()
+                'path': self.path.to_dict()
             }
 
         return fibre_dict
 
     @classmethod
+    @abstractmethod
     def from_dict(cls, fibre_dict: dict):
         """
         Instantiate a fibre from a saved dictionary.
@@ -219,175 +261,59 @@ class Fibre(ABC):
         parameters.add_section('FIBRE')
         parameters.set('FIBRE', 'correlation_length', str(fibre_dict['correlation_length']))
         parameters.set('FIBRE', 'beat_length',        str(fibre_dict['beat_length']))
-        parameters.set('FIBRE', 'section_length',     str(fibre_dict['section_lengths'][0]))
         parameters.set('FIBRE', 'PMD_parameter',      str(fibre_dict['PMD_parameter']))
         parameters.set('FIBRE', 'realisation_count',  str(fibre_dict['realisation_count']))
         parameters.set('FIBRE', 'photoelasticity',    str(fibre_dict['photoelasticity']))
 
-        if 'path_coordinates' in fibre_dict:
-            parameters.set('FIBRE', 'path_coordinates', str(fibre_dict['path_coordinates']))
+        section_path = Path.from_dict(fibre_dict['section_path'])
+        parameters.set('FIBRE', 'section_length', str(section_path.lengths[0]))
+        
+        if 'path' in fibre_dict:
+            path = Path.from_dict(fibre_dict['path'])
+            parameters.set('FIBRE', 'path_coordinates', json.dumps(path.coordinates.tolist()))
         else:
-            parameters.set('FIBRE', 'section_count', str(len(fibre_dict['section_lengths'])))
+            parameters.set('FIBRE', 'section_count', str(section_path.edge_count))
 
         fibre = cls(parameters)
         fibre.section_DGD                = np.array(fibre_dict['section_DGD'])
-
-        if 'section_major_angles' in fibre_dict:
-            fibre.section_major_angles   = np.array(fibre_dict['section_major_angles'])
-            fibre.section_birefringences = np.array(fibre_dict['section_birefringences'])
-        else:
-            fibre.section_PSP            = np.array(fibre_dict['section_PSP'])
+        
+        fibre._section_path = section_path
+        if 'path' in fibre_dict:
+            fibre._path = path
 
         return fibre
 
-    def __eq__(self, other):
-        if self._PMD_parameter                  == other._PMD_parameter        and \
-            self._photoelasticity               == other._photoelasticity      and \
-            self._realisation_count             == other._realisation_count    and \
-            self._section_count                 == other._section_count        and \
-            self._section_length                == other._section_length       and \
-            np.all(self._path_coordinates       == other._path_coordinates)    and \
-            np.all(self._path_lengths           == other._path_lengths)        and \
-            np.all(self._path_positions         == other._path_positions)      and \
-            np.all(self._section_coordinates    == other._section_coordinates) and \
-            np.all(self._section_lengths        == other._section_lengths)     and \
-            np.all(self._section_positions      == other._section_positions)   and \
-            np.all(self._section_DGD            == other._section_DGD)         and \
-            np.all(self._section_major_angles   == other._section_major_angles)  and \
-            np.all(self._section_birefringences == other._section_birefringences)  and \
-            np.all(self._section_PSP            == other._section_PSP):
-            return True
-
-        return False
+    def __eq__(self, other) -> bool:
+        return self._PMD_parameter       == other._PMD_parameter     and \
+            self._photoelasticity    == other._photoelasticity   and \
+            self._realisation_count  == other._realisation_count and \
+            self._section_path       == other._section_path      and \
+            self._path               == other._path              and \
+            np.all(self._section_DGD == other._section_DGD)
 
     @property
-    def path_coordinates(self) -> np.ndarray:
+    def path(self) -> Path:
         """
-        [np.ndarray] array of fibre path segment endpoint coordinates, shape [S+1, 2] where S is the number of path segments and the second dimension contains longitude, latitude
+        [Path] segmented fibre path
         """
-        if self._path_coordinates is not None:
-            return self._path_coordinates
-        raise AttributeError("Path coordinates were not passed to Fibre constructor, and are therefore not available")
+        if self._path is None:
+            raise AttributeError("Path coordinates were not passed to Fibre constructor, and are therefore not available")
+        return self._path
 
-    @path_coordinates.setter
-    def path_coordinates(self, value):
-        raise AttributeError("The path endpoint coordinates path_coordinates cannot be changed after instantiation of the Fibre")
-
-    @property
-    def path_centre_coordinates(self) -> np.ndarray:
-        """
-        [np.ndarray] array of fibre path segment midpoint coordinates, shape [S, 2]
-        """
-        return (self.path_coordinates[:-1] + self.path_coordinates[1:]) / 2
-
-    @path_centre_coordinates.setter
-    def path_centre_coordinates(self, value):
-        raise AttributeError("The path midpoint coordinates cannot be set directly")
+    @path.setter
+    def path(self, value):
+        raise AttributeError("The path cannot be changed after instantiation of the Fibre")
 
     @property
-    def path_lengths(self) -> np.ndarray:
+    def section_path(self) -> Path:
         """
-        [np.ndarray] array of fibre path segment lengths in km, shape [S, 2] where S is the number of path segments
+        [Path] segmented fibre path, divided into short split-step sections. May or may not include earth coordinates, depending on the fibre parameters
         """
-        if self._path_coordinates is not None:
-            return self._path_lengths
-        raise AttributeError("Path coordinates were not passed to Fibre constructor, and path lengths are therefore not available")
+        return self._section_path
 
-    @path_lengths.setter
-    def path_lengths(self, value):
-        raise AttributeError("The path lengths path_lengths cannot be changed after instantiation of the Fibre")
-
-    @property
-    def path_positions(self) -> np.ndarray:
-        """
-        [np.ndarray] array of accumulative fibre path segment lengths in km, shape [S+1, 2] where S is the number of path segments
-        """
-        if self._path_positions is not None:
-            return self._path_positions
-        raise AttributeError("Path coordinates were not passed to Fibre constructor, and path positions are therefore not available")
-
-    @path_positions.setter
-    def path_positions(self, value):
-        raise AttributeError("The path segment endpoint positions path_positions cannot be changed after instantiation of the Fibre")
-
-    @property
-    def path_centre_positions(self):
-        """
-        [np.ndarray] array of accumulative fibre path segment lengths in km measured at each segment centre, shape [S, 2] where S is the number of path segments
-        """
-        return (self.path_positions[:-1] + self.path_positions[1:]) / 2
-
-    @path_centre_positions.setter
-    def path_centre_positions(self, value):
-        raise AttributeError("The path centre positions path_positions cannot be changed after instantiation of the Fibre")
-
-    @property
-    def section_coordinates(self) -> np.ndarray:
-        """
-        [np.ndarray] array of fibre section coordinates, shape [S+1, 2] where S is the number of fibre sections and the second dimension contains longitude, latitude
-        """
-        if self._section_coordinates is not None:
-            return self._section_coordinates
-        raise AttributeError("Path coordinates were not passed to Fibre constructor, and section coordinates are therefore not available")
-
-    @section_coordinates.setter
-    def section_coordinates(self, value):
-        raise AttributeError("The section coordinates section_coordinates cannot be changed after instantiation of the Fibre")
-
-    @property
-    def section_centre_coordinates(self) -> np.ndarray:
-        """
-        [np.ndarray] array of fibre section midpoint coordinates, shape [S, 2]
-        """
-        return (self.section_coordinates[:-1] + self.section_coordinates[1:]) / 2
-
-    @section_centre_coordinates.setter
-    def section_centre_coordinates(self, value):
-        raise AttributeError("The section midpoint coordinates cannot be set directly")
-
-    @property
-    def section_lengths(self) -> np.ndarray:
-        """
-        [np.ndarray] array of fibre section lengths, shape [S] where S is the number of fibre sections
-        """
-        return self._section_lengths
-
-    @section_lengths.setter
-    def section_lengths(self, value):
-        raise AttributeError("The section lengths section_lengths cannot be changed after instantiation of the Fibre")
-
-    @property
-    def section_positions(self) -> np.ndarray:
-        """
-        [np.ndarray] array of accumulative fibre sections in km, shape [S+1] where S is the number of fibre sections
-        """
-        return self._section_positions
-
-    @section_positions.setter
-    def section_positions(self, value):
-        raise AttributeError("The section endpoint positions section_positions cannot be changed after instantiation of the Fibre")
-
-    @property
-    def section_centre_positions(self) -> np.ndarray:
-        """
-        [np.ndarray] array of accumulative fibre sections in km measured at each section centre, shape [S, 2] where S is the number of fibre sections
-        """
-        return (self.section_positions[:-1] + self.section_positions[1:]) / 2
-
-    @section_centre_positions.setter
-    def section_centre_positions(self, value):
-        raise AttributeError("The section centre positions section_positions cannot be changed after instantiation of the Fibre")
-
-    @property
-    def section_count(self) -> int:
-        """
-        [int] number of fibre sections of this Fibre.
-        """
-        return len(self.section_lengths)
-
-    @section_count.setter
-    def section_count(self, value):
-        raise AttributeError("The section count section_count cannot be changed after instantiation of the Fibre.")
+    @section_path.setter
+    def section_path(self, value):
+        raise AttributeError("The section path cannot be changed after instantiation of the Fibre")
 
     @property
     def correlation_length(self) -> float:
@@ -438,7 +364,7 @@ class Fibre(ABC):
         """
         [float] total length of the fibre in km
         """
-        return self.section_positions[-1]
+        return self.section_path.positions[-1]
 
     @length.setter
     def length(self, value):
@@ -477,7 +403,7 @@ class Fibre(ABC):
     def section_DGD(self, value: np.ndarray):
         assert isinstance(value, np.ndarray), f"New section_DGD must be type np.ndarray, but was a {type(value)}"
         assert value.dtype in (float, int), f"New section_DGD array must contain values of type float, but contained {value.dtype}"
-        assert value.shape == (self.section_count, self.realisation_count), f"New section_DGD array must have shape (self.section_count ({self.section_count}), self.realisation_count ({self.realisation_count})), but had shape {value.shape}"
+        assert value.shape == (self.section_path.edge_count, self.realisation_count), f"New section_DGD array must have shape (self.section_path.edge_count ({self.section_path.edge_count}), self.realisation_count ({self.realisation_count})), but had shape {value.shape}"
         self._section_DGD = value.copy().astype(float)
 
     @property
@@ -485,7 +411,7 @@ class Fibre(ABC):
         """
         Accumulated differential group delay in ps, shape [R] where R is the number of fibre realisations
         """
-        frequency_angular = np.array([-np.pi, np.pi]) / (60 * self.section_lengths[0])
+        frequency_angular = np.array([-np.pi, np.pi]) / (60 * self.section_path.lengths[0])
 
         Jones_matrices = self.Jones(frequency_angular) # [R,F,2,2]
         Jones_matrices_derivative = np.diff(Jones_matrices, axis = 1)[:, 0] / np.diff(frequency_angular)[0]
@@ -498,51 +424,3 @@ class Fibre(ABC):
     @DGD.setter
     def DGD(self, value):
         raise AttributeError("The accumulated DGD cannot be set directly; set section DGD instead")
-
-    @property
-    def section_major_angles(self) -> np.ndarray:
-        """
-        [np.ndarray], dtype [float] orientation of the major axes of birefringence per section in radians
-        """
-        return self._section_major_angles
-
-    @section_major_angles.setter
-    def section_major_angles(self, value) -> None:
-        assert self.section_major_angles is not None, f"Fibre was initialised with PSP matrices (not angles), and this cannot be changed"
-        assert isinstance(value, np.ndarray), f"New section_major_angles value must be type np.ndarray, but was a {type(value)}"
-        assert value.dtype in (float, int), f"New section_major_angles array must contain values of type float, but contained {value.dtype}"
-        assert value.shape == (self.section_count, self.realisation_count), f"New section_major_angles array must have shape (self.section_count ({self.section_count}), self.realisation_count ({self.realisation_count})), but had shape {value.shape}"
-        # assert np.all((value >= -np.pi) & (value < np.pi)), f"New section_major_angles array must have values between -pi and pi"
-        self._section_major_angles = value.copy().astype(float)
-
-    @property
-    def section_birefringences(self) -> np.ndarray:
-        """
-        [np.ndarray], dtype [float] local differential phase between the major polarisation axes per section in ps
-        """
-        return self._section_birefringences
-
-    @section_birefringences.setter
-    def section_birefringences(self, value) -> None:
-        assert self.section_birefringences is not None, f"Fibre was initialised with PSP matrices (not angles), and this cannot be changed"
-        assert isinstance(value, np.ndarray), f"New section_birefringences value must be type np.ndarray, but was a {type(value)}"
-        assert value.dtype in (float, int), f"New section_birefringences array must contain values of type float, but contained {value.dtype}"
-        assert value.shape == (self.section_count, self.realisation_count), f"New section_birefringences array must have shape (self.section_count ({self.section_count}), self.realisation_count ({self.realisation_count})), but had shape {value.shape}"
-        # assert np.all((value >= -np.pi) & (value < np.pi)), f"New section_birefringences array must have values between -pi and pi"
-        self._section_birefringences = value.copy().astype(float)
-
-    @property
-    def section_PSP(self) -> np.ndarray:
-        """
-        [np.ndarray], dtype [float] matrices that rotate the state of polarisation (SOP) to the local principle states of polarisation (PSPs)
-        """
-        return self._section_PSP
-
-    @section_PSP.setter
-    def section_PSP(self, value) -> None:
-        assert self._section_PSP is not None, f"Fibre was initialised with PSP angles (not matrices), and this cannot be changed"
-        assert isinstance(value, np.ndarray), f"New section_PSP value must be type np.ndarray, but was a {type(value)}"
-        assert value.dtype in (float, int, complex), f"New section_PSP array must contain values of type complex, but contained {value.dtype}"
-        assert value.shape == (self.section_count, self.realisation_count, 2, 2), f"New section_PSP array must have shape (self.section_count ({self.section_count}), self.realisation_count ({self.realisation_count}), 2, 2), but had shape {value.shape}"
-        assert np.allclose(value[..., 0, 0], value[..., 1, 1].conjugate()) and np.allclose(value[..., 1, 0], -value[..., 0, 1].conjugate()), f"New section_PSP array must contain unitary matrices, but didn't"
-        self._section_PSP = value.copy().astype(complex)

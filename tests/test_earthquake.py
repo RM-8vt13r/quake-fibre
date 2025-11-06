@@ -2,42 +2,38 @@
 Test correctness of earthquake.py
 """
 from configparser import ConfigParser
+import json
 
-from tremor_waveplate_toolbox import Earthquake, FibreCoarseStep
+import numpy as np
+
+from tremor_waveplate_toolbox import Earthquake, Path
 
 parameters = ConfigParser()
 
-parameters['FIBRE'] = {
-    'correlation_length': '0.1',   # Correlation length in km
-    'beat_length': '0.03',         # Beat length in km
-    'section_length': '0.1',       # Section length in km
-    'path_coordinates': '[\
-        [102.57171090634661, 5.791616724837154],\
-        [102.72290646910318, 5.906566563564761],\
-        [102.75470997931428, 5.902883822383411]\
-    ]', # Coordinates of the Besut-Perhentian Islands cable, taken from https://www.submarinecablemap.com/api/v3/cable/cable-geo.json
-    'PMD_parameter': '0.1',      # Polarisation mode dispersion parameter in ps / (km ^ 0.5)
-    'realisation_count': '1000', # Number of fibre realisations to simulate simultaneously
-    'photoelasticity': '0.1'     # Photoelasticity, which relates material strain to optical strain
-}
+path_coordinates = [
+    [102.57171090634661, 5.791616724837154],
+    [102.72290646910318, 5.906566563564761],
+    [102.75470997931428, 5.902883822383411]
+]
 
 parameters['EARTHQUAKE'] = {
     'event': 'GCMT:C201002270634A', # A historic earthquake event, structured <catalog>:<identifier> (e.g. from https://www.globalcmt.org/)
-    'model': 'ak135f_5s'             # Earth model for Syngine to use from https://ds.iris.edu/ds/products/syngine/#earth
+    'model': 'ak135f_5s',           # Earth model for Syngine to use from https://ds.iris.edu/ds/products/syngine/#earth
+    'batch_size': '100'             # The number of seismograms to request at most simultaneously
 }
 
 def test_earthquake():
-    fibre      = FibreCoarseStep(parameters)
+    path = Path(*zip(*path_coordinates))
     earthquake = Earthquake(parameters)
 
-    displacements_local, displacements_global, displacements_projected, strains_projected = earthquake.request_fibre_section_projected_strain(fibre, True)
+    displacements_local, displacements_global, displacements_projected, strains_projected = earthquake.request_projected_strains(path, parameters.getint('EARTHQUAKE', 'batch_size'), True)
     # assert len(times.shape) == 1, f"times should have one dimension, but had shape {times.shape}"
-    assert displacements_local.shape[0] == fibre.section_count + 1, f"fibre section count + 1 should match the first dimension of displacements_local, but these were {fibre.section_count} and {displacements_local.shape}"
+    assert displacements_local.shape[0] == path.vertex_count, f"path vertex count should match the first dimension of displacements_local, but these were {path.vertex_count} and {displacements_local.shape}"
     assert displacements_local.shape[2] == 3, f"displacements_local should have three channels (normal, longitude, latitude), but had {displacements_local.shape[2]}"
-    assert displacements_global.shape[0] == fibre.section_count + 1, f"fibre section count + 1 should match the first dimension of displacements_global, but these were {fibre.section_count} and {displacements_global.shape}"
+    assert displacements_global.shape[0] == path.vertex_count, f"path vertex count should match the first dimension of displacements_global, but these were {path.vertex_count} and {displacements_global.shape}"
     assert displacements_global.shape[2] == 3, f"displacements_global should have three channels (normal, longitude, latitude), but had {displacements_global.shape[2]}"
     # assert times.shape[0] == displacements_normal.shape[1], f"times length should match the second dimension of displacements_normal, but these were {len(times)} and {displacements_normal.shape}"
     # assert displacements_normal.shape == displacements_longitude.shape and displacements_normal.shape == displacements_latitude.shape, f"displacements_normal, displacements_longitude, and displacements_latitude should have the same shapes, but had shapes {displacements_normal.shape}, {displacements_longitude.shape} and {displacements_latitude.shape}"
     assert displacements_local.shape == displacements_global.shape, f"displacements_local and displacements_global should have the same shapes, but had shapes {displacements_local.shape} and {displacements_global.shape}"
     assert displacements_projected.shape == (displacements_local.shape[0] - 1, displacements_local.shape[1], 2), f"displacements_projected and displacements_local should have shapes [S, T, 2] and [S + 1, T, 3], but had shapes {displacements_projected.shape} and {displacements_local.shape}"
-    assert strains_projected.shape == [*displacements_projected.shape[:-1], 1], f"strains_projected and displacements_projected should have shapes [S, T, 1] and [S, T, 2], but had shapes {strains_projected.shape} and {displacements_projected.shape}"
+    assert strains_projected.shape == (*displacements_projected.shape[:-1], 1), f"strains_projected and displacements_projected should have shapes [S, T, 1] and [S, T, 2], but had shapes {strains_projected.shape} and {displacements_projected.shape}"

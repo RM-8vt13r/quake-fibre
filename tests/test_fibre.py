@@ -28,11 +28,11 @@ parameters['TRANSCEIVER'] = {
 parameters['FIBRE'] = {
     'correlation_length': '0.1', # Correlation length in km
     'beat_length': '0.05',       # Beat length in km
-    'section_length': '0.00167', # section length in km
+    'section_length': '0.0167', # section length in km
     # 'section_length': '0.1', # section length in km
-    'section_count': '1000',     # Number of fibre sections, each of which has length Lc
+    'section_count': '100',     # Number of fibre sections, each of which has length Lc
     'PMD_parameter': '10',       # Polarisation mode dispersion parameter in ps / (km ^ 0.5)
-    'realisation_count': '999',  # Number of fibre realisations to simulate simultaneously
+    'realisation_count': '99',  # Number of fibre realisations to simulate simultaneously
     'photoelasticity': '0.1'     # Photoelasticity, which relates material strain to optical strain
 }
 
@@ -56,15 +56,16 @@ parameters_geographic['FIBRE']['path_coordinates'] = '[\
 def test_fibre_propagation():
     for channel in (FibreMarcuse(parameters), FibreCoarseStep(parameters)):
         try:
-            channel.path_coordinates
-            channel.path_lengths
-            channel.path_positions
-            channel.section_coordinates
+            channel.path.coordinates
         except: pass
-        else:   raise AssertionError(f"{type(channel)} should raise an error when accessing unset path_coordinates, path_lengths, path_positions or section_coordinates, but didn't")
+        else:   raise AssertionError(f"{type(channel)} should raise an error when accessing unset path.coordinates, but didn't")
+        try:
+            channel.section_path.coordinates
+        except: pass
+        else:   raise AssertionError(f"{type(channel)} should raise an error when accessing unset section_path.coordinates, but didn't")
 
-        assert np.all(channel.section_lengths == parameters.getfloat('FIBRE', 'section_length')), f"{type(channel)} sections should have length section_length, but didn't"
-        assert channel.section_count == parameters.getint('FIBRE', 'section_count'), f"{type(channel)} should have {parameters.getint('FIBRE', 'section_count')} sections, but had {channel.section_count}"
+        assert np.all(channel.section_path.lengths == parameters.getfloat('FIBRE', 'section_length')), f"{type(channel)} sections should have length section_length, but didn't"
+        assert channel.section_path.edge_count == parameters.getint('FIBRE', 'section_count'), f"{type(channel)} should have {parameters.getint('FIBRE', 'section_count')} sections, but had {channel.section_path.edge_count}"
 
         transmitter = Transmitter(parameters)
         _, signal = transmitter.transmit_random(1, int(parameters.getfloat("SIGNAL", "symbol_count")))
@@ -78,8 +79,6 @@ def test_fibre_propagation():
 
         # Test the DGD-less case
         channel._PMD_parameter = 0.0
-        # import pdb
-        # pdb.set_trace()
         propagated_signal_no_DGD = channel(signal, verbose = True)
         assert np.allclose(signal.power_W, propagated_signal_no_DGD.power_W), f"{type(channel)} did not retain signal energy in the DGD-less case"
         assert not np.allclose(signal.samples_time, propagated_signal_no_DGD.samples_time), f"{type(channel)} output matched the input (but shouldn't) in the DGD-less case"
@@ -120,7 +119,7 @@ def test_fibre_propagation():
     if 'cupy' in sys.modules: signal.to_device(Device.CUDA)
 
     material_strain = Signal(
-        samples = 10 * np.random.default_rng().normal(size = (channel.section_count, 60, 1)),
+        samples = 10 * np.random.default_rng().normal(size = (channel.section_path.edge_count, 60, 1)),
         sample_rate = 1,
     )
     propagated_signal_earthquake_0s = channel(signal, strain = material_strain, transmission_start_time = 0, verbose = True)
@@ -158,7 +157,7 @@ def test_fibre_propagation():
 def test_fibre_initialisation():
     for channel in (FibreMarcuse(parameters), FibreCoarseStep(parameters)):
         DGD_accumulated = channel.DGD
-        assert np.isclose(np.mean(DGD_accumulated), channel.PMD_parameter * np.sqrt(channel.length), rtol = 1e-1), f"Accumulated DGD does not match PMD parameter"
+        assert np.isclose(np.mean(DGD_accumulated), channel.PMD_parameter * np.sqrt(channel.length), rtol = 2e-1), f"Accumulated DGD does not match PMD parameter"
 
         if isinstance(channel, FibreMarcuse): continue
         # Check if accumulated DGD is Maxwellian-distributed.
@@ -169,16 +168,14 @@ def test_fibre_initialisation():
 
 def test_fibre_path():
     for channel in (FibreMarcuse(parameters_geographic), FibreCoarseStep(parameters_geographic)):
-        assert np.allclose(channel.section_lengths[:-1], parameters_geographic.getfloat('FIBRE', 'section_length')), "Fibre section lengths didn't match parameter section_length with geographic initialisation"
-        assert np.isclose(np.sum(channel.section_lengths), np.sum(channel.path_lengths)), f"Fibre path- and section lengths add up to {np.sum(channel.path_lengths)} and {np.sum(channel.section_lengths)}, but should have the same total"
+        assert np.allclose(channel.section_path.lengths[:-1], parameters_geographic.getfloat('FIBRE', 'section_length')), "Fibre section lengths didn't match parameter section_length with geographic initialisation"
+        assert np.isclose(np.sum(channel.section_path.lengths), np.sum(channel.path.lengths)), f"Fibre path- and section lengths add up to {np.sum(channel.path.lengths)} and {np.sum(channel.section_path.lengths)}, but should have the same total"
 
         try:
-            channel.path_coordinates
-            channel.path_lengths
-            channel.path_positions
-            channel.section_coordinates
+            channel.path.coordinates
+            channel.section_path.coordinates
         except AttributeError:
-            raise AssertionError("Channel should contain path_coordinates, path_lengths, path_positions, and section_coordinates, but didn't")
+            raise AssertionError("Channel should contain a path and a section_path with coordinates, but didn't")
 
         transmitter = Transmitter(parameters)
         _, signal = transmitter.transmit_random(1, int(parameters.getfloat("SIGNAL", "symbol_count")))

@@ -26,6 +26,9 @@ parameters['SIGNAL'] = {
 }
 
 def test_transmitter():
+    # import pdb
+    # pdb.set_trace()
+
     transmitter = Transmitter(parameters)
     symbols, signal = transmitter.transmit_random(parameters.getint('SIGNAL', 'batch_size'), int(parameters.getfloat('SIGNAL', 'symbol_count')))
     assert symbols.shape == (1, parameters.getint('SIGNAL', 'batch_size'), int(parameters.getfloat('SIGNAL', 'symbol_count')), 2), f"Transmitted symbols shape should be [R (1), B ({parameters.getint('SIGNAL', 'batch_size')}), S ({int(parameters.getfloat('SIGNAL', 'symbol_count'))}), P (2)], but was {symbols.shape}"
@@ -40,7 +43,7 @@ def test_receiver():
     receiver = Receiver(parameters)
     symbols_received = receiver(signal)
     assert symbols_received.shape == symbols.shape, f"Transmitted and received symbols should have the same shape, but had shapes {symbols.shape} and {symbols_received.shape}"
-    assert np.allclose(symbols_received.power_W, 2), f"Received symbols should have power 2 (unit power per polarisation), but had power {received_symbols.power_W}W"
+    assert np.allclose(symbols_received.power_W, 2), f"Received symbols should have power 2 (unit power per polarisation), but had power {symbols_received.power_W}W"
     assert np.allclose(symbols_received.samples_time, symbols.samples_time), f"Transmitted and received symbols should be the same, but were not"
 
     parameters['TRANSCEIVER']['filter_parameter'] = '0.1'

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "tremor-waveplate-toolbox"
-version = "2025.11.04"
+version = "2025.11.05"
 description = "Dual-polarisation transmission through an optical fibre undergoing earthquake perturbations."
 readme = {file = "README.md", content-type = "text/markdown"}
 
