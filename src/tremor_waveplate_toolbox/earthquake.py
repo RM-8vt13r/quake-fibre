@@ -1,5 +1,5 @@
 """
-A class that simulates earthquakes along an optical fibre using Syngine
+A class that simulates earthquakes along a path on the earth using Syngine
 """
 from configparser import ConfigParser
 
@@ -61,7 +61,7 @@ class Earthquake:
         if batch_size is None: batch_size = path.vertex_count
         assert isinstance(batch_size, int), f"batch_size must be an int, but was a {type(batch_size)}"
 
-        if verbose: print(f"Requesting seismograms from Syngine at {path.vertex_count} coordinates along the fibre. This may take a while..")
+        if verbose: print(f"Requesting seismograms from Syngine at {path.vertex_count} coordinates along the path. This may take a while..")
         try:
             batch_count = int(np.ceil(path.vertex_count / batch_size))
 

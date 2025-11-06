@@ -64,7 +64,7 @@ class FibreMarcuse(Fibre):
         for section_index, (section_DGD, section_major_rotation, section_birefringence) in enumerate(iterable): # [R, 1, 1], [R, 1, 2, 2], [R, 1, 1]
             # Request earthquake strain for the next sections, if necessary
             if earthquake is not None and section_index % earthquake_batch_size == 0:
-                _, _, _, strain = earthquake(self.section_path[section_index * earthquake_batch_size:(section_index + 1) * earthquake_batch_size + 1], verbose = verbose)
+                _, _, _, strain = earthquake(self.section_path[section_index:section_index + earthquake_batch_size + 1], verbose = verbose)
                 strain.to_device(signal.device)
                 strain_start_section_index = section_index
                 
