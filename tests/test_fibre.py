@@ -75,7 +75,7 @@ def test_fibre_propagation():
         assert np.allclose(signal.power_W, propagated_signal.power_W), f"{type(channel)} did not retain signal energy"
         assert not np.allclose(signal.samples_time, propagated_signal.samples_time), f"{type(channel)} output matched the input (but shouldn't)"
         jones_matrices = channel.Jones(signal.frequency_angular, verbose = True)
-        assert np.allclose(np.einsum('rspq,rbsq->rbsp', jones_matrices, signal.samples_frequency), propagated_signal.samples_frequency), f"{type(channel)} propagation and Jones matrix produced different results"
+        assert np.allclose(np.einsum('rbspq,rbsq->rbsp', jones_matrices, signal.samples_frequency), propagated_signal.samples_frequency), f"{type(channel)} propagation and Jones matrix produced different results"
 
         # Test the DGD-less case
         channel._PMD_parameter = 0.0
@@ -84,7 +84,7 @@ def test_fibre_propagation():
         assert not np.allclose(signal.samples_time, propagated_signal_no_DGD.samples_time), f"{type(channel)} output matched the input (but shouldn't) in the DGD-less case"
         assert not np.allclose(propagated_signal.samples_time, propagated_signal_no_DGD.samples_time), f"{type(channel)} outputs matched for the cases with and without DGD (but shouldn't)"
         jones_matrices_no_DGD = channel.Jones(signal.frequency_angular, verbose = True)
-        assert np.allclose(np.einsum('rspq,rbsq->rbsp', jones_matrices_no_DGD, signal.samples_frequency), propagated_signal_no_DGD.samples_frequency), f"{type(channel)} propagation and Jones matrix produced different results"
+        assert np.allclose(np.einsum('rbspq,rbsq->rbsp', jones_matrices_no_DGD, signal.samples_frequency), propagated_signal_no_DGD.samples_frequency), f"{type(channel)} propagation and Jones matrix produced different results"
         assert not np.allclose(jones_matrices_no_DGD, jones_matrices), f"{type(channel)} Jones matrices matched in the cases with and without DGD (but shouldn't)"
         channel._PMD_parameter = parameters.getfloat('FIBRE', 'PMD_parameter')
 
@@ -122,26 +122,20 @@ def test_fibre_propagation():
         samples = 10 * np.random.default_rng().normal(size = (channel.section_path.edge_count, 60, 1)),
         sample_rate = 1,
     )
-    propagated_signal_earthquake_0s = channel(signal, strain = material_strain, transmission_start_time = 0, verbose = True)
-    propagated_signal_earthquake_30s = channel(signal, strain = material_strain, transmission_start_time = 30, verbose = True)
-    jones_matrices_earthquake_0s = channel.Jones(signal.frequency_angular, strain = material_strain, transmission_start_time = 0, verbose = True)
-    jones_matrices_earthquake_30s = channel.Jones(signal.frequency_angular, strain = material_strain, transmission_start_time = 30, verbose = True)
+    propagated_signals_earthquake = channel(signal, strain = material_strain, transmission_start_times = [0, 30], verbose = True)
+    jones_matrices_earthquake = channel.Jones(signal.frequency_angular, strain = material_strain, transmission_start_times = [0, 30], verbose = True)
 
-    propagated_signal_earthquake_0s.to_device(Device.CPU)
-    propagated_signal_earthquake_30s.to_device(Device.CPU)
-    jones_matrices_earthquake_0s = jones_matrices_earthquake_0s.get()
-    jones_matrices_earthquake_30s = jones_matrices_earthquake_30s.get()
+    propagated_signals_earthquake.to_device(Device.CPU)
+    jones_matrices_earthquake = jones_matrices_earthquake.get()
 
-    assert np.allclose(propagated_signal_earthquake_0s.power_W, signal.power_W), f"{type(channel)} earthquake-perturbed fibre at 0 seconds did not retain signal energy"
-    assert np.allclose(propagated_signal_earthquake_30s.power_W, signal.power_W), f"{type(channel)} earthquake-perturbed fibre at 30 seconds did not retain signal energy"
-    assert not np.allclose(propagated_signal_earthquake_0s.samples_time, signal.samples_time), f"{type(channel)} earthquake-perturbed fibre at 0 seconds matches input signal (but shouldn't)"
-    assert not np.allclose(propagated_signal_earthquake_30s.samples_time, signal.samples_time), f"{type(channel)} earthquake-perturbed fibre at 30 seconds matches input signal (but shouldn't)"
-    assert not np.allclose(propagated_signal_earthquake_0s.samples_time, propagated_signal.samples_time), f"{type(channel)} earthquake didn't perturb signal at 0 seconds"
-    assert not np.allclose(propagated_signal_earthquake_30s.samples_time, propagated_signal.samples_time), f"{type(channel)} earthquake didn't perturb signal at 30 seconds"
-    assert not np.allclose(propagated_signal_earthquake_0s.samples_time, propagated_signal_earthquake_30s.samples_time), f"{type(channel)} earthquake perturbed signals at 0 and 30 seconds the same (but shouldn't have)"
+    assert np.allclose(propagated_signal_earthquake.power_W, signal.power_W), f"{type(channel)} earthquake-perturbed fibre at 0 seconds did not retain signal energy"
+    assert not np.allclose(propagated_signal_earthquake.samples_time[:, 0, None], signal.samples_time), f"{type(channel)} earthquake-perturbed fibre at 0 seconds matches input signal (but shouldn't)"
+    assert not np.allclose(propagated_signal_earthquake.samples_time[:, 1, None], signal.samples_time), f"{type(channel)} earthquake-perturbed fibre at 30 seconds matches input signal (but shouldn't)"
+    assert not np.allclose(propagated_signal_earthquake.samples_time[:, 0, None], propagated_signal.samples_time), f"{type(channel)} earthquake didn't perturb signal at 0 seconds"
+    assert not np.allclose(propagated_signal_earthquake.samples_time[:, 1, None], propagated_signal.samples_time), f"{type(channel)} earthquake didn't perturb signal at 30 seconds"
+    assert not np.allclose(propagated_signal_earthquake.samples_time[:, 0, None], propagated_signal_earthquake.samples_time[:, 1, None]), f"{type(channel)} earthquake perturbed signals at 0 and 30 seconds the same (but shouldn't have)"
 
-    assert np.allclose(np.einsum('rspq,rbsq->rbsp', jones_matrices_earthquake_0s, signal.samples_frequency), propagated_signal_earthquake_0s.samples_frequency), f"{type(channel)} earthquake-perturbed fibre propagation and Jones matrix at 0 seconds produced different results"
-    assert np.allclose(np.einsum('rspq,rbsq->rbsp', jones_matrices_earthquake_30s, signal.samples_frequency), propagated_signal_earthquake_30s.samples_frequency), f"{type(channel)} earthquake-perturbed fibre propagation and Jones matrix at 30 seconds produced different results"
+    assert np.allclose(np.einsum('rbspq,rbsq->rbsp', jones_matrices_earthquake, signal.samples_frequency), propagated_signal_earthquake.samples_frequency), f"{type(channel)} earthquake-perturbed fibre propagation and Jones matrix produced different results"
 
 
 # def test_fibre_PSP_setter():
@@ -186,7 +180,7 @@ def test_fibre_path():
         assert signal.xp.allclose(signal.power_W, propagated_signal.power_W), f"Fibre did not retain signal energy"
         assert not signal.xp.allclose(signal.samples_time, propagated_signal.samples_time), f"Fibre output matched the input (but shouldn't)"
         jones_matrices = channel.Jones(signal.frequency_angular, verbose = True)
-        assert signal.xp.allclose(signal.xp.einsum('rspq,rbsq->rbsp', jones_matrices, signal.samples_frequency), propagated_signal.samples_frequency), f"Fibre propagation and Jones matrix produced different results"
+        assert signal.xp.allclose(signal.xp.einsum('rbspq,rbsq->rbsp', jones_matrices, signal.samples_frequency), propagated_signal.samples_frequency), f"Fibre propagation and Jones matrix produced different results"
 
 
 def test_fibre_dict():

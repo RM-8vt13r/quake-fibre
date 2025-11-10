@@ -9,7 +9,6 @@ import scipy as sp
 
 from .fibre import Fibre
 from .signal import Signal
-from .earthquake import Earthquake
 from .constants import Device, PAULI_VECTOR
 
 class FibreCoarseStep(Fibre):
@@ -50,15 +49,24 @@ class FibreCoarseStep(Fibre):
         self.section_PSP  = sp.linalg.expm(-1j * rotation_angle[:, :, None, None] * np.einsum('sra,apq->srpq', rotation_axis, PAULI_VECTOR))
         
     @override
-    def _propagate_master(self, signal: Signal, frequency_angular: np.ndarray, transmission_start_time: float = 0, earthquake: Earthquake = None, earthquake_batch_size: int = 100, verbose: bool = False) -> Signal:
+    def _propagate_master(self, signal: Signal, frequency_angular: np.ndarray, transmission_start_times: (float, np.ndarray) = 0, strain: Signal = None, verbose: bool = False) -> Signal:
         """
         Master function both for propagating a signal or building a Jones transfer matrix
         """
-        section_DGDs = signal.xp.array(self.section_DGD[:, :, None, None])
-        section_PSPs = signal.xp.array(self.section_PSP[:, :, None])
+        assert strain is None, f"Strain perturbation not yet implemented in the coarse-step fibre model"
+
+        if not isinstance(transmission_start_times, (float, int)):
+            transmission_start_times = signal.xp.array(transmission_start_times)
+            assert len(transmission_start_times.shape) == 1, f"transmission_start_times must have shape [T,], but had shape {transmission_start_times.shape}"
+            assert signal.shape[signal.sample_axis - 1] == 1, f"If transmission_start_times has shape [T,] signal must have batch size 1, but this was {signal.shape[signal.sample_axis - 1]}"
+        else:
+            transmission_start_times = signal.xp.array([transmission_start_times])
+
+        section_DGDs = signal.xp.array(self.section_DGD[:, :, *(None,) * -signal.sample_axis_negative]) # [S, R, 1, 1]/[S, R, 1, 1, 1]
+        section_PSPs = signal.xp.array(self.section_PSP[:, :, *(None,) * -(1 + signal.sample_axis_negative)]) # [S, R, 1, 2, 2]/[S, R, 1, 1, 2, 2]
 
         signal = signal.copy()
-        frequency_angular = frequency_angular[*(None,) * signal.sample_axis_nonnegative, :, *(None,) * (2 - signal.sample_axis_nonnegative)] # [1, 1, F]/[1, F, 1]
+        frequency_angular = frequency_angular[*(None,) * 2, :, *(None,) * -(2 + signal.sample_axis_negative)] # [1, 1, F]/[1, 1, F, 1]
 
         iterable = zip(section_DGDs, section_PSPs)
         if verbose:
@@ -66,18 +74,18 @@ class FibreCoarseStep(Fibre):
             iterable = tqdm(
                 iterable,
                 total = self.section_path.edge_count,
-                desc = f"{"Propagating signal through fibre" if signal.sample_axis_negative == -2 else "Building Jones matrix"} ({'CPU' if signal.device == Device.CPU else 'CUDA'}{', perturbed' if earthquake is not None else ''})"
+                desc = f"{"Propagating signal through fibre" if signal.sample_axis_negative == -2 else "Building Jones matrix"} ({'CPU' if signal.device == Device.CPU else 'CUDA'}{', perturbed' if strain is not None else ''})"
             )
 
-        for section_DGD, section_PSP in iterable:
+        for section_DGD, section_PSP in iterable: # [R, 1, 1], [R, 1]
             if self.PMD_parameter != 0:
                 # Apply section DGD
-                differential_phase = signal.xp.exp(-0.5j * section_DGD * frequency_angular * 1e-12)
-                signal.samples_frequency = signal.samples_frequency * signal.xp.stack([differential_phase, differential_phase.conjugate()], axis = 3)
+                differential_phase = signal.xp.exp(-0.5j * section_DGD * frequency_angular * 1e-12) # [R, 1, 1]/[R, 1, 1, 1] * [1, 1, F]/[1, 1, F, 1] = [R, 1, F]/[R, 1, F, 1]
+                signal.samples_frequency = signal.samples_frequency * signal.xp.stack([differential_phase, differential_phase.conjugate()], axis = -1) # [R, B, F, 2]/[R, B, F, 2, 2] * [R, 1, F, 2]/[R, 1, F, 1, 2] = [R, B, F, 2]/[R, B, F, 2, 2]
 
             # Scramble SOP
-            signal.samples_frequency = signal.xp.einsum(
-                'rbpq,rbsq->rbsp',
+            signal.samples_frequency = signal.xp.einsum( # [R, 1, 2, 2]/[R, 1, 1, 2, 2] @ [R, B, F, 2]/[R, B, F, 2, 2] = [R, B, F, 2]/[R, B, F, 2, 2]
+                '...pq,...sq->...sp',
                 section_PSP,
                 signal.samples_frequency,
                 optimize = True

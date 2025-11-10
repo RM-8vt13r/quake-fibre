@@ -2,6 +2,7 @@
 A class that simulates earthquakes along a path on the earth using Syngine
 """
 from configparser import ConfigParser
+import logging
 
 import numpy as np
 import obspy as op
@@ -11,6 +12,8 @@ from obspy.clients.base import ClientHTTPException
 
 from .signal import Signal
 from .path import Path
+
+logger = logging.getLogger()
 
 class Earthquake:
     def __init__(self, parameters: ConfigParser):
@@ -61,7 +64,7 @@ class Earthquake:
         if batch_size is None: batch_size = path.vertex_count
         assert isinstance(batch_size, int), f"batch_size must be an int, but was a {type(batch_size)}"
 
-        if verbose: print(f"Requesting seismograms from Syngine at {path.vertex_count} coordinates along the path. This may take a while..")
+        if verbose: logger.info(f"Requesting seismograms from Syngine at {path.vertex_count} coordinates along the path. This may take a while..")
         try:
             batch_count = int(np.ceil(path.vertex_count / batch_size))
 
@@ -69,7 +72,7 @@ class Earthquake:
             for batch_index in range(batch_count):
                 batch_start = batch_index * batch_size
                 batch_stop  = min(batch_start + batch_size, path.vertex_count)
-                if verbose and batch_size != path.vertex_count: print(f"Requesting seismograms at coordinates {batch_start + 1}-{batch_stop} (batch {batch_index + 1} of {batch_count}).")
+                if verbose and batch_size != path.vertex_count: logger.info(f"Requesting seismograms at coordinates {batch_start + 1}-{batch_stop} (batch {batch_index + 1} of {batch_count}).")
                 syngine_stream += self._syngine_client.get_waveforms_bulk(
                     model = self.model,
                     bulk = [{
@@ -87,7 +90,7 @@ class Earthquake:
         except ConnectionError as e:
             raise ConnectionError("Syngine could not be reached; please check your internet connection")
         
-        if verbose: print("Syngine request complete. Collecting and validating results..")
+        if verbose: logger.info("Syngine request complete. Collecting and validating results..")
 
         times = syngine_stream[0].times()
         sample_time = times[1] - times[0]
@@ -109,7 +112,7 @@ class Earthquake:
             assert syngine_stream[3 * receiver_index].times().shape == times.shape and np.all(syngine_stream[3 * receiver_index].times() == times), f"Receiver {receiver_index + 1} normal trace times must be the same as receiver 1 normal trace times, but weren't"
             displacements_normal[receiver_index, :] = syngine_stream[3 * receiver_index].data
 
-        if verbose: print("Results validated and returned!")
+        if verbose: logger.info("Results validated and returned!")
 
         return Signal(
             samples = np.stack([
