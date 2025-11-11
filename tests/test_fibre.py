@@ -5,6 +5,8 @@ Test correctness of fibre.py
 from configparser import ConfigParser
 import copy
 import sys
+import logging
+logging.basicConfig(level = logging.INFO)
 
 try:
     import cupy as cp
@@ -13,7 +15,7 @@ except:
 import numpy as np
 import scipy as sp
 
-from tremor_waveplate_toolbox import FibreCoarseStep, FibreMarcuse, Transmitter, Device
+from tremor_waveplate_toolbox import FibreCoarseStep, FibreMarcuse, Transmitter, Device, Signal, Perturbation
 
 parameters = ConfigParser()
 parameters['TRANSCEIVER'] = {
@@ -54,7 +56,7 @@ parameters_geographic['FIBRE']['path_coordinates'] = '[\
 ]' # Coordinates along the Besut-Perhentian Islands cable, taken from https://www.submarinecablemap.com/api/v3/cable/cable-geo.json
 
 def test_fibre_propagation():
-    for channel in (FibreMarcuse(parameters), FibreCoarseStep(parameters)):
+    for channel in (FibreCoarseStep(parameters), FibreMarcuse(parameters)):
         try:
             channel.path.coordinates
         except: pass
@@ -113,30 +115,60 @@ def test_fibre_propagation():
         assert np.allclose(jones_matrices_no_DGD_cuda, jones_matrices_no_DGD), f"{type(channel)} CUDA- and CPU Jones matrices yielded deviating results in the DGD-less case"
         
         signal.to_device(Device.CPU)
-
-    if isinstance(channel, FibreCoarseStep): return
+        
+    # channel has type FibreMarcuse
 
     if 'cupy' in sys.modules: signal.to_device(Device.CUDA)
 
-    material_strain = Signal(
-        samples = 10 * np.random.default_rng().normal(size = (channel.section_path.edge_count, 60, 1)),
-        sample_rate = 1,
-    )
-    propagated_signals_earthquake = channel(signal, strain = material_strain, transmission_start_times = [0, 30], verbose = True)
-    jones_matrices_earthquake = channel.Jones(signal.frequency_angular, strain = material_strain, transmission_start_times = [0, 30], verbose = True)
+    perturbation_array = 1 + 10 * np.random.default_rng().normal(size = (channel.section_path.edge_count, 60))
+    perturbation_birefringence_scalar = Perturbation(birefringence_scalars = perturbation_array, sample_rate = 1)
+    perturbation_birefringence_adder = Perturbation(birefringence_adders = perturbation_array, sample_rate = 1)
+    perturbation_angle_adder = Perturbation(major_angles_adders = perturbation_array, sample_rate = 1)
 
-    propagated_signals_earthquake.to_device(Device.CPU)
-    jones_matrices_earthquake = jones_matrices_earthquake.get()
+    propagated_signals_birefringence_scaled = channel(signal, transmission_start_times = [0, 30], perturbation = perturbation_birefringence_scalar, verbose = True)
+    jones_matrices_birefringence_scaled = channel.Jones(signal.frequency_angular, transmission_start_times = [0, 30], perturbation = perturbation_birefringence_scalar, verbose = True)
+    propagated_signals_birefringence_scaled.to_device(Device.CPU)
+    jones_matrices_birefringence_scaled = jones_matrices_birefringence_scaled.get()
 
-    assert np.allclose(propagated_signal_earthquake.power_W, signal.power_W), f"{type(channel)} earthquake-perturbed fibre at 0 seconds did not retain signal energy"
-    assert not np.allclose(propagated_signal_earthquake.samples_time[:, 0, None], signal.samples_time), f"{type(channel)} earthquake-perturbed fibre at 0 seconds matches input signal (but shouldn't)"
-    assert not np.allclose(propagated_signal_earthquake.samples_time[:, 1, None], signal.samples_time), f"{type(channel)} earthquake-perturbed fibre at 30 seconds matches input signal (but shouldn't)"
-    assert not np.allclose(propagated_signal_earthquake.samples_time[:, 0, None], propagated_signal.samples_time), f"{type(channel)} earthquake didn't perturb signal at 0 seconds"
-    assert not np.allclose(propagated_signal_earthquake.samples_time[:, 1, None], propagated_signal.samples_time), f"{type(channel)} earthquake didn't perturb signal at 30 seconds"
-    assert not np.allclose(propagated_signal_earthquake.samples_time[:, 0, None], propagated_signal_earthquake.samples_time[:, 1, None]), f"{type(channel)} earthquake perturbed signals at 0 and 30 seconds the same (but shouldn't have)"
+    propagated_signals_birefringence_added = channel(signal, perturbation = perturbation_birefringence_adder, transmission_start_times = [0, 30], verbose = True)
+    jones_matrices_birefringence_added = channel.Jones(signal.frequency_angular, transmission_start_times = [0, 30], perturbation = perturbation_birefringence_adder, verbose = True)
+    propagated_signals_birefringence_added.to_device(Device.CPU)
+    jones_matrices_birefringence_added = jones_matrices_birefringence_added.get()
 
-    assert np.allclose(np.einsum('rbspq,rbsq->rbsp', jones_matrices_earthquake, signal.samples_frequency), propagated_signal_earthquake.samples_frequency), f"{type(channel)} earthquake-perturbed fibre propagation and Jones matrix produced different results"
+    propagated_signals_major_angles_added = channel(signal, perturbation = perturbation_angle_adder, transmission_start_times = [0, 30], verbose = True)
+    jones_matrices_major_angles_added = channel.Jones(signal.frequency_angular, transmission_start_times = [0, 30], perturbation = perturbation_angle_adder, verbose = True)
+    propagated_signals_major_angles_added.to_device(Device.CPU)
+    jones_matrices_major_angles_added = jones_matrices_major_angles_added.get()
 
+    assert np.allclose(propagated_signals_birefringence_scaled.power_W, signal.power_W), f"{type(channel)} birefringence scalar-perturbed fibre did not retain signal energy"
+    assert np.allclose(propagated_signals_birefringence_added.power_W, signal.power_W), f"{type(channel)} birefringence adder-perturbed fibre did not retain signal energy"
+    assert np.allclose(propagated_signals_major_angles_added.power_W, signal.power_W), f"{type(channel)} angle adder-perturbed fibre did not retain signal energy"
+    
+    assert not np.allclose(propagated_signals_birefringence_scaled.samples_time[:, 0, None], signal.samples_time), f"{type(channel)} birefringence scalar-perturbed fibre at 0 seconds matches input signal (but shouldn't)"
+    assert not np.allclose(propagated_signals_birefringence_scaled.samples_time[:, 1, None], signal.samples_time), f"{type(channel)} birefringence scalar-perturbed fibre at 30 seconds matches input signal (but shouldn't)"
+    assert not np.allclose(propagated_signals_birefringence_added.samples_time[:, 0, None], signal.samples_time), f"{type(channel)} birefringence adder-perturbed fibre at 0 seconds matches input signal (but shouldn't)"
+    assert not np.allclose(propagated_signals_birefringence_added.samples_time[:, 1, None], signal.samples_time), f"{type(channel)} birefringence adder-perturbed fibre at 30 seconds matches input signal (but shouldn't)"
+    assert not np.allclose(propagated_signals_major_angles_added.samples_time[:, 0, None], signal.samples_time), f"{type(channel)} angle adder-perturbed fibre at 0 seconds matches input signal (but shouldn't)"
+    assert not np.allclose(propagated_signals_major_angles_added.samples_time[:, 1, None], signal.samples_time), f"{type(channel)} angle adder-perturbed fibre at 30 seconds matches input signal (but shouldn't)"
+
+    assert not np.allclose(propagated_signals_birefringence_scaled.samples_time[:, 0, None], propagated_signal.samples_time), f"{type(channel)} birefringence scalar didn't perturb signal at 0 seconds"
+    assert not np.allclose(propagated_signals_birefringence_scaled.samples_time[:, 1, None], propagated_signal.samples_time), f"{type(channel)} birefringence scalar didn't perturb signal at 30 seconds"
+    assert not np.allclose(propagated_signals_birefringence_added.samples_time[:, 0, None], propagated_signal.samples_time), f"{type(channel)} birefringence adder didn't perturb signal at 0 seconds"
+    assert not np.allclose(propagated_signals_birefringence_added.samples_time[:, 1, None], propagated_signal.samples_time), f"{type(channel)} birefringence adder didn't perturb signal at 30 seconds"
+    assert not np.allclose(propagated_signals_major_angles_added.samples_time[:, 0, None], propagated_signal.samples_time), f"{type(channel)} angle adder didn't perturb signal at 0 seconds"
+    assert not np.allclose(propagated_signals_major_angles_added.samples_time[:, 1, None], propagated_signal.samples_time), f"{type(channel)} angle adder didn't perturb signal at 30 seconds"
+    
+    assert not np.allclose(propagated_signals_birefringence_scaled.samples_time[:, 0, None], propagated_signals_birefringence_scaled.samples_time[:, 1, None]), f"{type(channel)} birefringence scalar perturbed signals at 0 and 30 seconds the same (but shouldn't have)"
+    assert not np.allclose(propagated_signals_birefringence_added.samples_time[:, 0, None], propagated_signals_birefringence_added.samples_time[:, 1, None]), f"{type(channel)} birefringence adder perturbed signals at 0 and 30 seconds the same (but shouldn't have)"
+    assert not np.allclose(propagated_signals_major_angles_added.samples_time[:, 0, None], propagated_signals_major_angles_added.samples_time[:, 1, None]), f"{type(channel)} angle adder perturbed signals at 0 and 30 seconds the same (but shouldn't have)"
+
+    assert np.allclose(np.einsum('rbspq,rbsq->rbsp', jones_matrices_birefringence_scaled, signal.samples_frequency), propagated_signals_birefringence_scaled.samples_frequency), f"{type(channel)} birefringence scalar-perturbed fibre propagation and Jones matrix produced different results"
+    assert np.allclose(np.einsum('rbspq,rbsq->rbsp', jones_matrices_birefringence_added, signal.samples_frequency), propagated_signals_birefringence_added.samples_frequency), f"{type(channel)} birefringence adder-perturbed fibre propagation and Jones matrix produced different results"
+    assert np.allclose(np.einsum('rbspq,rbsq->rbsp', jones_matrices_major_angles_added, signal.samples_frequency), propagated_signals_major_angles_added.samples_frequency), f"{type(channel)} angle adder-perturbed fibre propagation and Jones matrix produced different results"
+
+    assert not np.allclose(propagated_signals_birefringence_scaled.samples_frequency, propagated_signals_birefringence_added.samples_frequency), f"{type(channel)} birefringence scalar- and birefringence adder-perturbed fibre propagations produced the same results (but shouldn't have)"
+    assert not np.allclose(propagated_signals_birefringence_scaled.samples_frequency, propagated_signals_major_angles_added.samples_frequency), f"{type(channel)} birefringence scalar- and angle adder-perturbed fibre propagations produced the same results (but shouldn't have)"
+    assert not np.allclose(propagated_signals_birefringence_added.samples_frequency, propagated_signals_major_angles_added.samples_frequency), f"{type(channel)} birefringence adder- and angle adder-perturbed fibre propagations produced the same results (but shouldn't have)"
 
 # def test_fibre_PSP_setter():
 #     channel = Fibre(parameters)

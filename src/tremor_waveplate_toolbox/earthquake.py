@@ -1,8 +1,9 @@
 """
-A class that simulates earthquakes along a path on the earth using Syngine
+A class that simulates earthquakes along a path on the earth using Syngine.
 """
 from configparser import ConfigParser
 import logging
+from typing import override
 
 import numpy as np
 import obspy as op
@@ -12,10 +13,12 @@ from obspy.clients.base import ClientHTTPException
 
 from .signal import Signal
 from .path import Path
+from .perturbation_event import PerturbationEvent
+from .perturbation import Perturbation
 
 logger = logging.getLogger()
 
-class Earthquake:
+class Earthquake(PerturbationEvent):
     def __init__(self, parameters: ConfigParser):
         """
         Initialise the earthquake
@@ -27,6 +30,8 @@ class Earthquake:
         assert 'EARTHQUAKE' in parameters, "Parameters are missing section 'EARTHQUAKE'"
         assert 'event' in parameters['EARTHQUAKE'], "'event' is missing from parameters section 'EARTHQUAKE'."
         assert 'model' in parameters['EARTHQUAKE'], "'model' is missing from parameters section 'EARTHQUAKE'."
+
+        super().__init__()
 
         self._event = parameters.get('EARTHQUAKE', 'event')
         self._model = parameters.get('EARTHQUAKE', 'model')
@@ -42,12 +47,6 @@ class Earthquake:
                 raise ValueError(f"Earthquake event {self.event} is not known by Syngine; look at https://ds.iris.edu/spud/momenttensor for available events")
             else:
                 raise e
-
-    def __call__(self, path: Path, batch_size: int = None, verbose: bool = False):
-        """
-        See request_projected_strains()
-        """
-        return self.request_projected_strains(path, batch_size, verbose)
 
     def request_local_seismograms(self, path: Path, batch_size: int = None, verbose: bool = False):
         """
@@ -217,6 +216,21 @@ class Earthquake:
         )
 
         return displacements_local, displacements_global, displacements_projected, strains_projected
+
+    @override
+    def get_perturbation(self, path: Path, batch_size: int = None, verbose: bool = False) -> Perturbation:
+        """
+        Create a perturbation from this earthquake. See Earthquake.request_projected_strains() and PerturbationEvent.get_perturbation() for documentation details.
+        """
+        _, _, _, strains_projected = self.request_projected_strains(path, batch_size, verbose)
+        perturbation = Perturbation(
+                birefringence_scalars = 1. + strains_projected.samples_time[:, :, 0],
+                birefringence_adders = None,
+                major_angles_adders = None,
+                sample_rate = strains_projected.sample_rate,
+                domain = strains_projected.domain
+            )
+        return perturbation
 
     @property
     def event(self):

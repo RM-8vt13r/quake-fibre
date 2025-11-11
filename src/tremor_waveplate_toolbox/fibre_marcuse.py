@@ -1,6 +1,6 @@
 """
 An optical fibre channel model base class for dual-polarisation transmission, based on Marcuse's method.
-Currently it models only PMD effects: (earthquake-dependent) differential group delay and state of polarisation scramblers.
+Currently it models only PMD effects: (perturbed) differential phase and major birefringence axes rotations.
 """
 from typing import override
 
@@ -8,6 +8,7 @@ import numpy as np
 
 from .fibre import Fibre
 from .signal import Signal
+from .perturbation import Perturbation
 from .utils import rotation_matrix
 from .constants import Device
 
@@ -18,7 +19,7 @@ class FibreMarcuse(Fibre):
     This method models the slow rotation of the major birefringence axes over a section length much shorter than the correlation length.
     Each section, the major birefringence axes are rotated to the local preference, differential phase is added, and the SOP is rotated back to the global reference frame.
     Chromatic dispersion, the Kerr effect, attenuation, EDFA noise, and polarisation-dependent loss are neglected, and slow PMD drift are not implemented.
-    Earthquake strain can be modelled as a change in differential group delay.
+    External perturbations can be modelled as a change in differential phase or major birefringence axes orientations.
     """
     @override
     def _init_DGD(self):
@@ -38,12 +39,12 @@ class FibreMarcuse(Fibre):
         self.section_major_angles    = np.cumsum(np.sqrt(self.section_path.lengths / (2 * self.correlation_length))[:, None] * np.random.default_rng().normal(size = (self.section_path.edge_count, self.realisation_count)), axis = 0)
 
     @override
-    def _propagate_master(self, signal: Signal, frequency_angular: np.ndarray, transmission_start_times: (float, np.ndarray) = 0, strain: Signal = None, verbose: bool = False) -> Signal:
+    def _propagate_master(self, signal: Signal, frequency_angular: np.ndarray, transmission_start_times: (float, np.ndarray) = 0, perturbation: Perturbation = None, verbose: bool = False) -> Signal:
         """
         Master function both for propagating a signal or building a Jones transfer matrix
         """
         if signal.device == Device.CUDA: signal.to_device(Device.CUDA) # Ensure that the signal resides in the currently active cupy GPU
-        if strain is not None: strain.to_device(signal.device)
+        if perturbation is not None: perturbation.to_device(signal.device)
 
         if not isinstance(transmission_start_times, (float, int)):
             transmission_start_times = signal.xp.array(transmission_start_times)
@@ -53,7 +54,8 @@ class FibreMarcuse(Fibre):
             transmission_start_times = signal.xp.array([transmission_start_times])
         
         section_DGDs = signal.xp.array(self.section_DGD[:, :, *(None,) * -signal.sample_axis_negative]) # [S, R, 1, 1]/[S, R, 1, 1, 1]
-        section_major_rotations = signal.xp.array(rotation_matrix(self.section_major_angles[:, :, *(None,) * -(1 + signal.sample_axis_negative)])) # [S, R, 1, 2, 2]/[S, R, 1, 1, 2, 2]
+        # section_major_rotations = signal.xp.array(rotation_matrix(self.section_major_angles[:, :, *(None,) * -(1 + signal.sample_axis_negative)])) # [S, R, 1, 2, 2]/[S, R, 1, 1, 2, 2]
+        section_major_rotations = signal.xp.array(self.section_major_angles[:, :, *(None,) * -(1 + signal.sample_axis_negative)]) # [S, R, 1]/[S, R, 1, 1]
         section_birefringences = signal.xp.array(self.section_birefringences[:, :, *(None,) * -signal.sample_axis_negative]) # [S, R, 1, 1]/[S, R, 1, 1, 1]
 
         signal = signal.copy() # [R, B, F, 2]/[R, B, F, 2, 2]
@@ -65,37 +67,57 @@ class FibreMarcuse(Fibre):
             iterable = tqdm(
                 iterable,
                 total = self.section_path.edge_count,
-                desc = f"{"Propagating signal through fibre" if signal.sample_axis_negative == -2 else "Building Jones matrix"} ({'CPU' if signal.device == Device.CPU else 'CUDA'}{', perturbed' if strain is not None else ''})"
+                desc = f"{"Propagating signal through fibre" if signal.sample_axis_negative == -2 else "Building Jones matrix"} ({'CPU' if signal.device == Device.CPU else 'CUDA'}{', perturbed' if perturbation is not None else ''})"
             )
 
-        for section_index, (section_DGD, section_major_rotation, section_birefringence) in enumerate(iterable): # [R, 1, 1], [R, 1, 2, 2], [R, 1, 1]
-            # Rotate to local birefringence axes
-            signal.samples_frequency = signal.xp.einsum( # [R, 1, 2, 2]/[R, 1, 1, 2, 2] @ [R, B, F, 2]/[R, B, F, 2, 2] = [R, B, F, 2]/[R, B, F, 2, 2]
+        for section_index, (section_DGD, section_major_rotation, section_birefringence) in enumerate(iterable): # [R, 1, 1]/[R, 1, 1, 1], [R, 1]/[R, 1, 1], [R, 1, 1]/[R, 1, 1, 1]
+            # Prepare perturbation-related variables
+            if perturbation is not None:
+                perturbation_sample_times   = transmission_start_times + self.section_path.centre_positions[section_index] / self.group_velocity(signal.carrier_wavelength) # [B,]
+                perturbation_sample_mask    = (perturbation_sample_times >= 0) & (perturbation_sample_times < perturbation.duration)
+                perturbation_sample_indices = signal.xp.floor(perturbation_sample_times * perturbation.sample_rate).astype(int)
+
+            # Rotate to (perturbed) local birefringence axes
+            if perturbation is not None and perturbation.major_angles_adders is not None:
+                section_major_rotation = section_major_rotation + signal.xp.where( # [R, 1]/[R, 1, 1] + [1, B]/[1, B, 1] = [R, B]/[R, B, 1]
+                        perturbation_sample_mask,
+                        perturbation.major_angles_adders[section_index, perturbation_sample_indices],
+                        0.0
+                    )[None, :, *(None,) * -(2 + signal.sample_axis_negative)]
+
+            section_major_rotation_matrix = rotation_matrix(section_major_rotation) # [R, B, 2, 2]/[R, B, 1, 2, 2]
+            
+            signal.samples_frequency = signal.xp.einsum( # [R, B, 2, 2]/[R, B, 1, 2, 2] @ [R, B, F, 2]/[R, B, F, 2, 2] = [R, B, F, 2]/[R, B, F, 2, 2]
                 '...pq,...sq->...sp',
-                section_major_rotation,
+                section_major_rotation_matrix,
                 signal.samples_frequency,
                 optimize = True
             )
             
-            # Apply differential phase
+            # Apply (perturbed) differential phase
             differential_phase = section_birefringence # [R, 1, 1]/[R, 1, 1, 1]
             if self.PMD_parameter != 0: differential_phase = differential_phase + section_DGD * frequency_angular * 1e-12 # [R, 1, 1]/[R, 1, 1, 1] + [R, 1, 1]/[R, 1, 1, 1] * [1, 1, F]/[1, 1, F, 1] = [R, 1, F]/[R, 1, F, 1]
-            if strain is not None:
-                times = transmission_start_times + self.section_path.centre_positions[section_index] / self.group_velocity(signal.carrier_wavelength) # [B,]
-                section_strain = signal.xp.where(
-                        (times >= 0) & (times < signal.duration),
-                        strain.samples_time[section_index, signal.xp.floor(times * strain.sample_rate).astype(int)],
+            if perturbation is not None and perturbation.birefringence_scalars is not None:
+                differential_phase = differential_phase * signal.xp.where(
+                        perturbation_sample_mask,
+                        perturbation.birefringence_scalars[section_index, perturbation_sample_indices],
                         0.0
-                    )[None, :, *(None,) * -(1 + signal.sample_axis_negative)] # [1, B, 1]/[1, B, 1, 1]
-                differential_phase = differential_phase * (1. + self.photoelasticity * section_strain) # [R, 1, F]/[R, 1, F, 1] * [1, B, 1]/[1, B, 1, 1] = [R, B, F]/[R, B, F, 1]
+                    )[None, :, *(None,) * -(1 + signal.sample_axis_negative)] # [R, 1, F]/[R, 1, F, 1] * [1, B, 1]/[1, B, 1, 1] = [R, B, F]/[R, B, F, 1]
+
+            if perturbation is not None and perturbation.birefringence_adders is not None:
+                differential_phase = differential_phase + signal.xp.where(
+                        perturbation_sample_mask,
+                        perturbation.birefringence_adders[section_index, perturbation_sample_indices],
+                        0.0
+                    )[None, :, *(None,) * -(1 + signal.sample_axis_negative)] # [R, B, F]/[R, B, F, 1] * [1, B, 1]/[1, B, 1, 1] = [R, B, F]/[R, B, F, 1]
 
             differential_phase = signal.xp.exp(-0.5j * differential_phase) # [R, B, F]/[R, B, F, 1]
             signal.samples_frequency = signal.samples_frequency * signal.xp.stack([differential_phase, differential_phase.conjugate()], axis = -1) # [R, B, F, 2]/[R, B, F, 2, 2] * [R, B, F, 2]/[R, B, F, 1, 2] = [R, B, F, 2]/[R, B, F, 2, 2]
 
-            # Rotate back
-            signal.samples_frequency = signal.xp.einsum( # [R, 1, 2, 2]/[R, 1, 1, 2, 2] @ [R, B, F, 2]/[R, B, F, 2, 2] = [R, B, F, 2]/[R, B, F, 2, 2]
+            # Rotate back to reference axes
+            signal.samples_frequency = signal.xp.einsum( # [R, B, 2, 2]/[R, B, 1, 2, 2] @ [R, B, F, 2]/[R, B, F, 2, 2] = [R, B, F, 2]/[R, B, F, 2, 2]
                 '...pq,...sq->...sp',
-                signal.xp.moveaxis(section_major_rotation, -1, -2),
+                signal.xp.moveaxis(section_major_rotation_matrix, -1, -2),
                 signal.samples_frequency,
                 optimize = True
             )

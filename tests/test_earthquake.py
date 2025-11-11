@@ -3,6 +3,8 @@ Test correctness of earthquake.py
 """
 from configparser import ConfigParser
 import json
+import logging
+logging.basicConfig(level = logging.INFO)
 
 import numpy as np
 

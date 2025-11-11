@@ -31,7 +31,6 @@ class Signal:
         - sample_axis [int]: the index of axis S in the shape of samples
         - domain [Domain]: domain (time or frequency) in which samples is given.
         - carrier_wavelength [float]: carrier wavelength in nm; inf if the signal is not modulated.
-
         """
         assert isinstance(domain, Domain), f"domain must be a Domain, but was a {type(domain)}"
         # assert isinstance(device, Device), f"device must be a Device, but was a {type(device)}"

@@ -49,3 +49,10 @@ PAULI_3 = np.array([
 
 # Pauli spin matrix vector
 PAULI_VECTOR = np.stack([PAULI_1, PAULI_2, PAULI_3])
+
+# Preload variables in GPU memory
+if 'cupy' in sys.modules:
+    PAULI_1_CUDA      = cp.array(PAULI_1)
+    PAULI_2_CUDA      = cp.array(PAULI_2)
+    PAULI_3_CUDA      = cp.array(PAULI_3)
+    PAULI_VECTOR_CUDA = cp.array(PAULI_VECTOR)

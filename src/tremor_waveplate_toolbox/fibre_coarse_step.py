@@ -1,6 +1,6 @@
 """
 An optical fibre channel model base class for dual-polarisation transmission, based on the coarse-step method.
-Currently it models only PMD effects: (earthquake-dependent) differential group delay and state of polarisation scramblers.
+Currently it models only PMD effects: (perturbed) differential phase and major birefringence axes rotations.
 """
 from typing import override
 
@@ -9,6 +9,7 @@ import scipy as sp
 
 from .fibre import Fibre
 from .signal import Signal
+from .perturbation import Perturbation
 from .constants import Device, PAULI_VECTOR
 
 class FibreCoarseStep(Fibre):
@@ -17,7 +18,7 @@ class FibreCoarseStep(Fibre):
     Currently it models only polarisation-mode dispersion, using the coarse-step method.
     This model applies differential group delay and scrambles the state of polarisation in a completely random and distributed manner.
     Chromatic dispersion, the Kerr effect, attenuation, EDFA noise, and polarisation-dependent loss are neglected, and slow PMD drift are not implemented.
-    Earthquake strain can be modelled as a change in differential phase.
+    External perturbations can be modelled as a change in differential phase or major birefringence axes orientations.
     """
     @override
     def _init_DGD(self):
@@ -49,11 +50,11 @@ class FibreCoarseStep(Fibre):
         self.section_PSP  = sp.linalg.expm(-1j * rotation_angle[:, :, None, None] * np.einsum('sra,apq->srpq', rotation_axis, PAULI_VECTOR))
         
     @override
-    def _propagate_master(self, signal: Signal, frequency_angular: np.ndarray, transmission_start_times: (float, np.ndarray) = 0, strain: Signal = None, verbose: bool = False) -> Signal:
+    def _propagate_master(self, signal: Signal, frequency_angular: np.ndarray, transmission_start_times: (float, np.ndarray) = 0, perturbation: Perturbation = None, verbose: bool = False) -> Signal:
         """
         Master function both for propagating a signal or building a Jones transfer matrix
         """
-        assert strain is None, f"Strain perturbation not yet implemented in the coarse-step fibre model"
+        assert perturbation is None, f"Perturbation not yet implemented in the coarse-step fibre model"
 
         if not isinstance(transmission_start_times, (float, int)):
             transmission_start_times = signal.xp.array(transmission_start_times)
@@ -74,7 +75,7 @@ class FibreCoarseStep(Fibre):
             iterable = tqdm(
                 iterable,
                 total = self.section_path.edge_count,
-                desc = f"{"Propagating signal through fibre" if signal.sample_axis_negative == -2 else "Building Jones matrix"} ({'CPU' if signal.device == Device.CPU else 'CUDA'}{', perturbed' if strain is not None else ''})"
+                desc = f"{"Propagating signal through fibre" if signal.sample_axis_negative == -2 else "Building Jones matrix"} ({'CPU' if signal.device == Device.CPU else 'CUDA'}{', perturbed' if perturbation is not None else ''})"
             )
 
         for section_DGD, section_PSP in iterable: # [R, 1, 1], [R, 1]

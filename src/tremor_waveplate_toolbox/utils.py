@@ -7,7 +7,11 @@ try:
 except:
     pass
 
-from .constants import PAULI_1, PAULI_3
+from .constants import PAULI_3
+try:
+    from .constants import PAULI_3_CUDA
+except:
+    pass
 
 def rotation_matrix(angle: (float, np.ndarray)) -> np.ndarray:
     """
@@ -25,7 +29,7 @@ def rotation_matrix(angle: (float, np.ndarray)) -> np.ndarray:
     assert angle.dtype in (int, float), f"Angle must have type float, but had type {angle.dtype}"
     angle = angle.astype(float)[..., None, None]
 
-    return xp.cos(angle) * xp.eye(2) + 1j * xp.sin(angle) * xp.array(PAULI_3)
+    return xp.cos(angle) * xp.eye(2) + 1j * xp.sin(angle) * (PAULI_3 if xp == np else PAULI_3_CUDA)
 
 def phase_matrix(phase: (float, np.ndarray)) -> np.ndarray:
     """
