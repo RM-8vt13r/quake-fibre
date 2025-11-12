@@ -108,13 +108,13 @@ class Fibre(ABC):
         """
         pass
 
-    def __call__(self, signal: Signal, transmission_start_times: (float, np.ndarray) = 0, perturbation: Perturbation = None, verbose: bool = False) -> Signal:
+    def __call__(self, signal: Signal, transmission_start_times: (float, np.ndarray) = 0, perturbations: (Perturbation, list) = [], verbose: bool = False) -> Signal:
         """
         Make fibre instances callable; see propagate()
         """
-        return self.propagate(signal, transmission_start_times, perturbation, verbose)
+        return self.propagate(signal, transmission_start_times, perturbations, verbose)
 
-    def propagate(self, signal: Signal, transmission_start_times: (float, np.ndarray) = 0, perturbation: Perturbation = None, verbose: bool = False) -> Signal:
+    def propagate(self, signal: Signal, transmission_start_times: (float, np.ndarray) = 0, perturbations: (Perturbation, list) = [], verbose: bool = False) -> Signal:
         """
         Propagate a polarisation-multiplexed phase-multiplexed signal through the fibre.
         Multiple fibre realisations are applied at once.
@@ -123,8 +123,8 @@ class Fibre(ABC):
         Inputs:
         - signal [Signal]: the signal to propagate through the channel, shape [R,B,S,P] with number of realisations R or R = 1, batch size T, sample count S and principal polarisations P = 2.
         - transmission_start_times [float, np.ndarray]: timestamp(s) at which the signal transmission(s) begins in s, relative to the start time of a perturbation. If not a float, shape [T,].
-        - perturbation [Perturbation]: If not None, model this perturbation during signal transmission. Birefringence scaling is applied before addition.
-         verbose [bool]: whether to show a progress bar
+        - perturbations [Perturbation, list]: Model these perturbations during signal transmission, in order of appearance. All birefringence scaling is applied before addition.
+        - verbose [bool]: whether to show a progress bar
 
         Outputs:
         - [Signal]: the output signal, shape [R,B,S,P] or [R,T,S,P]
@@ -138,13 +138,13 @@ class Fibre(ABC):
                 signal,
                 signal.frequency_angular,
                 transmission_start_times,
-                perturbation,
+                perturbations,
                 verbose
             )
 
         return signal
 
-    def Jones(self, frequency_angular: (np.ndarray), carrier_wavelength: float = 1550., transmission_start_times: (float, np.ndarray) = 0, perturbation: Perturbation = None, verbose: bool = False) -> np.ndarray:
+    def Jones(self, frequency_angular: (np.ndarray), carrier_wavelength: float = 1550., transmission_start_times: (float, np.ndarray) = 0, perturbations: (Perturbation, list) = [], verbose: bool = False) -> np.ndarray:
         """
         Calculate the fibre Jones matrix.
         The calculations will be done on the device (CPU or GPU) that frequency_angular resides in (see Signal.to_device())
@@ -154,7 +154,7 @@ class Fibre(ABC):
         - frequency_angular [np.ndarray, cp.ndarray]: frequencies in rad/s at which to calculate the jones matrix, relative to the carrier frequency, shape [S,]
         - carrier_wavelength [float]: carrier wavelength in nm
         - transmission_start_times [float, np.ndarray]: timestamp(s) at which the signal transmission(s) begins in s, relative to the start time of a perturbation. If not a float, shape [T,].
-        - perturbation [Perturbation]: If not None, model this perturbation during signal transmission. Birefringence scaling is applied before addition.
+        - perturbations [Perturbation, list]: Model these perturbations during signal transmission, in order of appearance. All birefringence scaling is applied before addition.
         - verbose [bool]: whether to print progress bars and messages
 
         Outputs:
@@ -180,14 +180,14 @@ class Fibre(ABC):
                 Jones_matrix_transposed,
                 frequency_angular,
                 transmission_start_times,
-                perturbation,
+                perturbations,
                 verbose
             )
 
-        return xp.transpose(Jones_matrix_transposed.samples, (0, 1, 2, 4, 3))
+        return xp.moveaxis(Jones_matrix_transposed.samples, -1, -2)
 
     @abstractmethod
-    def _propagate_master(self, signal: Signal, frequency_angular: np.ndarray, transmission_start_times: (float, np.ndarray) = 0, perturbation: Perturbation = None, verbose: bool = False) -> Signal:
+    def _propagate_master(self, signal: Signal, frequency_angular: np.ndarray, transmission_start_times: (float, np.ndarray) = 0, perturbations: (Perturbation, list) = [], verbose: bool = False) -> Signal:
         """
         Method called by propagate() and Jones() to simulate the fibre response.
 
@@ -195,7 +195,7 @@ class Fibre(ABC):
         - signal [Signal]: the signal or transposed Jones matrix to propagate through the channel, shape [R,B,S,P] with number of realisations R or R = 1, batch size B, sample count S and principal polarisations P = 2, OR shape [R, S, P, P] where the last two axes contain Jones transfer matrices.
         - frequency_angular [np.ndarray, cp.ndarray]: frequencies of the signal or Jones matrix in rad/s, relative to the carrier frequency, shape [S,]
         - transmission_start_times [float, np.ndarray]: timestamp(s) at which the signal transmission(s) begins in s, relative to the start time of a perturbation. If not a float, shape [T,].
-        - perturbation [Perturbation]: If not None, model this perturbation during signal transmission. Birefringence scaling is applied before addition.
+        - perturbations [Perturbation, list]: Model these perturbations during signal transmission, in order of appearance. All birefringence scaling is applied before addition.
         - verbose [bool]: whether to print progress bars and messages
 
         Outputs:

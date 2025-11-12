@@ -50,11 +50,12 @@ class FibreCoarseStep(Fibre):
         self.section_PSP  = sp.linalg.expm(-1j * rotation_angle[:, :, None, None] * np.einsum('sra,apq->srpq', rotation_axis, PAULI_VECTOR))
         
     @override
-    def _propagate_master(self, signal: Signal, frequency_angular: np.ndarray, transmission_start_times: (float, np.ndarray) = 0, perturbation: Perturbation = None, verbose: bool = False) -> Signal:
+    def _propagate_master(self, signal: Signal, frequency_angular: np.ndarray, transmission_start_times: (float, np.ndarray) = 0, perturbations: (Perturbation, list) = [], verbose: bool = False) -> Signal:
         """
         Master function both for propagating a signal or building a Jones transfer matrix
         """
-        assert perturbation is None, f"Perturbation not yet implemented in the coarse-step fibre model"
+        if perturbations is None: perturbations = ()
+        assert len(perturbations) == 0, f"Perturbations not yet implemented in the coarse-step fibre model"
 
         if not isinstance(transmission_start_times, (float, int)):
             transmission_start_times = signal.xp.array(transmission_start_times)
@@ -75,7 +76,7 @@ class FibreCoarseStep(Fibre):
             iterable = tqdm(
                 iterable,
                 total = self.section_path.edge_count,
-                desc = f"{"Propagating signal through fibre" if signal.sample_axis_negative == -2 else "Building Jones matrix"} ({'CPU' if signal.device == Device.CPU else 'CUDA'}{', perturbed' if perturbation is not None else ''})"
+                desc = f"{"Propagating signal through fibre" if signal.sample_axis_negative == -2 else "Building Jones matrix"} ({'CPU' if signal.device == Device.CPU else 'CUDA'}{', perturbed' if len(perturbations) > 0 else ''})"
             )
 
         for section_DGD, section_PSP in iterable: # [R, 1, 1], [R, 1]

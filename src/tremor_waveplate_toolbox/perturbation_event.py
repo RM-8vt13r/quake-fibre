@@ -8,7 +8,7 @@ from .path import Path
 
 class PerturbationEvent(ABC):
     def __init__(self):
-        pass
+        super().__init__()
 
     def __call__(self, path: Path, *args, **kwargs):
         return self.get_perturbation(path, *args, **kwargs)
