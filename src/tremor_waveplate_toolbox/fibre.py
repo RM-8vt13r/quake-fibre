@@ -27,7 +27,7 @@ class Fibre(ABC):
     Currently it models only polarisation-mode dispersion using one of two methods:
     - the coarse-step method, which applies differential group delay and scrambles the state of polarisation in a random and distributed manner.
     - Marcuse's method, which was derived directly from the coupled nonlinear Schrödinger equation.
-    Chromatic dispersion, the Kerr effect, attenuation, EDFA noise, and polarisation-dependent loss are neglected, and slow PMD drift are not implemented.
+    Chromatic dispersion, the Kerr effect, attenuation, EDFA noise, and polarisation-dependent loss are neglected, and slow polarisation mode dispersion drift are not implemented.
     External perturbations can be modelled as a change in differential phase or major birefringence axes orientations.
     """
     def __init__(self, parameters: ConfigParser):
@@ -35,30 +35,30 @@ class Fibre(ABC):
         Instantiate multiple fibre channels for simultaneous propagation.
 
         Required entries in parameters['FIBRE']:
-        - correlation_length [float]: correlation length in km
-        - beat_length [float]:        beat length in km
-        - section_length [float]:     PMD section length in km (at least the correlation length Lc for the coarse-step model, << Lc for Marcuse's model)
-        - path_coordinates [list]:    list of coordinates (longitude, latitude) along the fibre path.
-        - PMD_parameter [float]:      average accumulated differential group delay in ps/(km ^ 0.5).
-        - realisation_count [int]:    the number of fibre realisations with different distributed polarisation mode dispersion.
-        - photoelasticity [float]:    the fibre photoelasticity.
+        - correlation_length [float]:           correlation length in km
+        - beat_length [float]:                  beat length in km
+        - section_length [float]:               fibre section length in km (at least the correlation length Lc for the coarse-step model, << Lc for Marcuse's model)
+        - path_coordinates [list]:              list of coordinates (longitude, latitude) along the fibre path.
+        - polarisation_mode_dispersion [float]: average accumulated differential group delay in ps/(km ^ 0.5).
+        - realisation_count [int]:              the number of fibre realisations with different distributed polarisation mode dispersion.
+        - photoelasticity [float]:              the fibre photoelasticity.
         """
-        assert 'FIBRE'              in parameters, f"Parameters are missing section 'FIBRE'."
-        assert 'correlation_length' in parameters['FIBRE'], f"'correlation_length' is missing from parameters section 'FIBRE'."
-        assert 'beat_length'        in parameters['FIBRE'], f"'beat_length' is missing from parameters section 'FIBRE'."
-        assert 'section_length'     in parameters['FIBRE'], f"'section_length' is missing from parameters section 'FIBRE'."
-        assert 'PMD_parameter'      in parameters['FIBRE'], f"'PMD_parameter' is missing from parameters section 'FIBRE'."
-        assert 'realisation_count'  in parameters['FIBRE'], f"'realisation_count' is missing from parameters section 'FIBRE'."
-        assert 'photoelasticity'    in parameters['FIBRE'], f"'photoelasticity' is missing from parameters section 'FIBRE'"
-        assert 'path_coordinates'   in parameters['FIBRE'] or 'section_count' in parameters['FIBRE'], f"Parameters section 'FIBRE' must contain variable 'path_coordinates' or 'section_count'."
+        assert 'FIBRE'                        in parameters, f"Parameters are missing section 'FIBRE'."
+        assert 'correlation_length'           in parameters['FIBRE'], f"'correlation_length' is missing from parameters section 'FIBRE'."
+        assert 'beat_length'                  in parameters['FIBRE'], f"'beat_length' is missing from parameters section 'FIBRE'."
+        assert 'section_length'               in parameters['FIBRE'], f"'section_length' is missing from parameters section 'FIBRE'."
+        assert 'polarisation_mode_dispersion' in parameters['FIBRE'], f"'polarisation_mode_dispersion' is missing from parameters section 'FIBRE'."
+        assert 'realisation_count'            in parameters['FIBRE'], f"'realisation_count' is missing from parameters section 'FIBRE'."
+        assert 'photoelasticity'              in parameters['FIBRE'], f"'photoelasticity' is missing from parameters section 'FIBRE'"
+        assert 'path_coordinates'             in parameters['FIBRE'] or 'section_count' in parameters['FIBRE'], f"Parameters section 'FIBRE' must contain variable 'path_coordinates' or 'section_count'."
 
-        self._correlation_length = parameters.getfloat('FIBRE', 'correlation_length')
-        self._beat_length        = parameters.getfloat('FIBRE', 'beat_length')
-        self._section_length     = parameters.getfloat('FIBRE', 'section_length')
-        self._PMD_parameter      = parameters.getfloat('FIBRE', 'PMD_parameter')
-        self._realisation_count  = int(parameters.getfloat('FIBRE', 'realisation_count'))
-        self._photoelasticity    = parameters.getfloat('FIBRE', 'photoelasticity')
-        self._material           = refractiveindex.RefractiveIndexMaterial(
+        self._correlation_length           = parameters.getfloat('FIBRE', 'correlation_length')
+        self._beat_length                  = parameters.getfloat('FIBRE', 'beat_length')
+        self._section_length               = parameters.getfloat('FIBRE', 'section_length')
+        self._polarisation_mode_dispersion = parameters.getfloat('FIBRE', 'polarisation_mode_dispersion')
+        self._realisation_count            = int(parameters.getfloat('FIBRE', 'realisation_count'))
+        self._photoelasticity              = parameters.getfloat('FIBRE', 'photoelasticity')
+        self._material                     = refractiveindex.RefractiveIndexMaterial(
             shelf = 'glass',
             book  = 'fused_silica',
             page  = 'Malitson'
@@ -74,8 +74,7 @@ class Fibre(ABC):
             self._section_count = parameters.getint('FIBRE', 'section_count')
 
         self._init_path()
-        self._init_DGD()
-        self._init_PSP()
+        self._init_birefringence()
 
     def _init_path(self):
         """
@@ -95,16 +94,9 @@ class Fibre(ABC):
                 ))
 
     @abstractmethod
-    def _init_DGD(self):
+    def _init_birefringence(self):
         """
-        Initialise random differential group delay per realisation and fibre section in ps.
-        """
-        pass
-
-    @abstractmethod
-    def _init_PSP(self):
-        """
-        Initialise a random preferred orientation and/or scrambling of the state of polarisation per realisation and fibre section
+        Initialise random birefringence per realisation and fibre section in ps.
         """
         pass
 
@@ -186,6 +178,28 @@ class Fibre(ABC):
 
         return xp.moveaxis(Jones_matrix_transposed.samples, -1, -2)
 
+    def accumulate_differential_group_delays(self, device: Device = Device.CPU, verbose: bool = False) -> np.ndarray:
+        """
+        Accumulated differential group delay in ps, shape [R] where R is the number of fibre realisations
+        """
+        match(device):
+            case Device.CPU: xp = np
+            case Device.CUDA:
+                assert 'cupy' in sys.modules, f"Cannot calculate differential group delay on CUDA; no cupy installation found"
+                xp = cp
+                
+        frequency_angular = xp.array([-xp.pi, xp.pi]) / (60 * self.section_path.lengths[0])
+
+        Jones_matrices = self.Jones(frequency_angular, verbose = verbose)[:, 0] # [R,F,2,2]
+        Jones_matrices_derivative = xp.diff(Jones_matrices, axis = 1)[:, 0] / xp.diff(frequency_angular)[0]
+
+        differential_group_delay = 2 * xp.sqrt(xp.linalg.det(Jones_matrices_derivative)) * 1e12 # Gordon et al. - PMD Fundamentals: Polarization Mode Dispersion in Optical Fibres
+        differential_group_delay = differential_group_delay.real.astype(float)
+
+        if xp != np: differential_group_delay = differential_group_delay.get()
+
+        return differential_group_delay
+
     @abstractmethod
     def _propagate_master(self, signal: Signal, frequency_angular: np.ndarray, transmission_start_times: (float, np.ndarray) = 0, perturbations: (Perturbation, list) = [], verbose: bool = False) -> Signal:
         """
@@ -224,13 +238,13 @@ class Fibre(ABC):
         - [dict] The dictionary representation of this fibre
         """
         fibre_dict = {
-            'correlation_length': self.correlation_length,
-            'beat_length':        self.beat_length,
-            'section_path':       self.section_path.to_dict(),
-            'PMD_parameter':      self.PMD_parameter,
-            'realisation_count':  self.realisation_count,
-            'photoelasticity':    self.photoelasticity,
-            'section_DGD':        self.section_DGD.tolist()
+            'correlation_length':           self.correlation_length,
+            'beat_length':                  self.beat_length,
+            'section_path':                 self.section_path.to_dict(),
+            'polarisation_mode_dispersion': self.polarisation_mode_dispersion,
+            'realisation_count':            self.realisation_count,
+            'photoelasticity':              self.photoelasticity,
+            'differential_group_delays':    self.differential_group_delays.tolist()
         }
 
         if self._path is not None:
@@ -254,11 +268,11 @@ class Fibre(ABC):
         """
         parameters = ConfigParser()
         parameters.add_section('FIBRE')
-        parameters.set('FIBRE', 'correlation_length', str(fibre_dict['correlation_length']))
-        parameters.set('FIBRE', 'beat_length',        str(fibre_dict['beat_length']))
-        parameters.set('FIBRE', 'PMD_parameter',      str(fibre_dict['PMD_parameter']))
-        parameters.set('FIBRE', 'realisation_count',  str(fibre_dict['realisation_count']))
-        parameters.set('FIBRE', 'photoelasticity',    str(fibre_dict['photoelasticity']))
+        parameters.set('FIBRE', 'correlation_length',           str(fibre_dict['correlation_length']))
+        parameters.set('FIBRE', 'beat_length',                  str(fibre_dict['beat_length']))
+        parameters.set('FIBRE', 'polarisation_mode_dispersion', str(fibre_dict['polarisation_mode_dispersion']))
+        parameters.set('FIBRE', 'realisation_count',            str(fibre_dict['realisation_count']))
+        parameters.set('FIBRE', 'photoelasticity',              str(fibre_dict['photoelasticity']))
 
         section_path = Path.from_dict(fibre_dict['section_path'])
         parameters.set('FIBRE', 'section_length', str(section_path.lengths[0]))
@@ -270,7 +284,7 @@ class Fibre(ABC):
             parameters.set('FIBRE', 'section_count', str(section_path.edge_count))
 
         fibre = cls(parameters)
-        fibre.section_DGD                = np.array(fibre_dict['section_DGD'])
+        fibre.differential_group_delays = np.array(fibre_dict['differential_group_delays'])
         
         fibre._section_path = section_path
         if 'path' in fibre_dict:
@@ -279,12 +293,12 @@ class Fibre(ABC):
         return fibre
 
     def __eq__(self, other) -> bool:
-        return self._PMD_parameter       == other._PMD_parameter     and \
-            self._photoelasticity    == other._photoelasticity   and \
-            self._realisation_count  == other._realisation_count and \
-            self._section_path       == other._section_path      and \
-            self._path               == other._path              and \
-            np.all(self._section_DGD == other._section_DGD)
+        return self._polarisation_mode_dispersion  == other._polarisation_mode_dispersion and \
+            self._photoelasticity                  == other._photoelasticity              and \
+            self._realisation_count                == other._realisation_count            and \
+            self._section_path                     == other._section_path                 and \
+            self._path                             == other._path                         and \
+            np.all(self._differential_group_delays == other._differential_group_delays)
 
     @property
     def path(self) -> Path:
@@ -333,15 +347,15 @@ class Fibre(ABC):
         raise AttributeError("The beat length beat_length cannot be changed after instantiation of the Fibre")
 
     @property
-    def PMD_parameter(self) -> float:
+    def polarisation_mode_dispersion(self) -> float:
         """
         [float] polarisation mode dispersion parameter of this Fibre in ps/(km ^ 0.5)
         """
-        return float(self._PMD_parameter)
+        return float(self._polarisation_mode_dispersion)
 
-    @PMD_parameter.setter
-    def PMD_parameter(self, value):
-        raise AttributeError("The polarisation mode dispersion parameter PMD_parameter cannot be changed after instantiation of the Fibre")
+    @polarisation_mode_dispersion.setter
+    def polarisation_mode_dispersion(self, value):
+        raise AttributeError("The polarisation mode dispersion parameter polarisation_mode_dispersion cannot be changed after instantiation of the Fibre")
 
     @property
     def realisation_count(self) -> float:
@@ -388,34 +402,26 @@ class Fibre(ABC):
         raise AttributeError("The fibre material cannot be changed after instantiation")
 
     @property
-    def section_DGD(self) -> np.ndarray:
+    def differential_group_delays(self) -> np.ndarray:
         """
         [float] the differential group delay per section and realisation in ps, shape [section_count, realisation_count]
         """
-        return self._section_DGD
+        return self._differential_group_delays
 
-    @section_DGD.setter
-    def section_DGD(self, value: np.ndarray):
-        assert isinstance(value, np.ndarray), f"New section_DGD must be type np.ndarray, but was a {type(value)}"
-        assert value.dtype in (float, int), f"New section_DGD array must contain values of type float, but contained {value.dtype}"
-        assert value.shape == (self.section_path.edge_count, self.realisation_count), f"New section_DGD array must have shape (self.section_path.edge_count ({self.section_path.edge_count}), self.realisation_count ({self.realisation_count})), but had shape {value.shape}"
-        self._section_DGD = value.copy().astype(float)
+    @differential_group_delays.setter
+    def differential_group_delays(self, value: np.ndarray):
+        assert isinstance(value, np.ndarray), f"New differential_group_delays must be type np.ndarray, but was a {type(value)}"
+        assert value.dtype in (float, int), f"New differential_group_delays array must contain values of type float, but contained {value.dtype}"
+        assert value.shape == (self.section_path.edge_count, self.realisation_count), f"New differential_group_delays array must have shape (self.section_path.edge_count ({self.section_path.edge_count}), self.realisation_count ({self.realisation_count})), but had shape {value.shape}"
+        self._differential_group_delays = value.copy().astype(float)
 
     @property
-    def DGD(self) -> np.ndarray:
+    def differential_group_delay(self) -> np.ndarray:
         """
         Accumulated differential group delay in ps, shape [R] where R is the number of fibre realisations
         """
-        frequency_angular = np.array([-np.pi, np.pi]) / (60 * self.section_path.lengths[0])
+        return self.accumulate_differential_group_delays()
 
-        Jones_matrices = self.Jones(frequency_angular)[:, 0] # [R,F,2,2]
-        Jones_matrices_derivative = np.diff(Jones_matrices, axis = 1)[:, 0] / np.diff(frequency_angular)[0]
-
-        accumulated_DGD = 2 * np.sqrt(np.linalg.det(Jones_matrices_derivative)) * 1e12 # Gordon et al. - PMD Fundamentals: Polarization Mode Dispersion in Optical Fibres
-        accumulated_DGD = accumulated_DGD.real.astype(float)
-
-        return accumulated_DGD
-
-    @DGD.setter
-    def DGD(self, value):
-        raise AttributeError("The accumulated DGD cannot be set directly; set section DGD instead")
+    @differential_group_delay.setter
+    def differential_group_delay(self, value):
+        raise AttributeError("The accumulated differential_group_delay cannot be set directly; set section differential_group_delays instead")

@@ -21,25 +21,24 @@ parameters = ConfigParser()
 parameters['TRANSCEIVER'] = {
     'constellation': 'QPSK',  # The symbol constellation to use
     'power': '2',             # Transmission power in dBm
-    'baud_rate': '1e6',       # Baud rate in symbols / s
+    'baud_rate': '40e9',      # Baud rate in symbols / s
     'pulse': 'RRCOS',         # Pulseshape, can be SINC or RRCOS, or define your own using the Pulse class
     'pulse_parameter': '0.5', # Parameter to pass to the pulse constructor. For a RRCOS pulse, this is the rolloff factor
     'upsample_factor': '4'    # Samples per symbol
 }
 
 parameters['FIBRE'] = {
-    'correlation_length': '0.1', # Correlation length in km
-    'beat_length': '0.05',       # Beat length in km
-    'section_length': '0.0167', # section length in km
-    # 'section_length': '0.1', # section length in km
-    'section_count': '100',     # Number of fibre sections, each of which has length Lc
-    'PMD_parameter': '10',       # Polarisation mode dispersion parameter in ps / (km ^ 0.5)
-    'realisation_count': '99',  # Number of fibre realisations to simulate simultaneously
-    'photoelasticity': '0.1'     # Photoelasticity, which relates material strain to optical strain
+    'correlation_length': '0.1',          # Correlation length in km
+    'beat_length': '0.05',                # Beat length in km
+    'section_length': '0.0167',           # section length in km
+    'section_count': '1000',              # Number of fibre sections
+    'polarisation_mode_dispersion': '10', # Polarisation mode dispersion parameter in ps / (km ^ 0.5)
+    'realisation_count': '99',            # Number of fibre realisations to simulate simultaneously
+    'photoelasticity': '0.8'              # Photoelasticity, which relates material strain to optical strain
 }
 
 parameters['SIGNAL'] = {
-    'symbol_count': '1e2'
+    'symbol_count': '1e2' # How many symbols to transmit
 }
 
 parameters_geographic = copy.deepcopy(parameters)
@@ -79,16 +78,16 @@ def test_fibre_propagation():
         jones_matrices = channel.Jones(signal.frequency_angular, verbose = True)
         assert np.allclose(np.einsum('rbspq,rbsq->rbsp', jones_matrices, signal.samples_frequency), propagated_signal.samples_frequency), f"{type(channel)} propagation and Jones matrix produced different results"
 
-        # Test the DGD-less case
-        channel._PMD_parameter = 0.0
+        # Test the case without differential group delay
+        channel._polarisation_mode_dispersion = 0.0
         propagated_signal_no_DGD = channel(signal, verbose = True)
-        assert np.allclose(signal.power_W, propagated_signal_no_DGD.power_W), f"{type(channel)} did not retain signal energy in the DGD-less case"
-        assert not np.allclose(signal.samples_time, propagated_signal_no_DGD.samples_time), f"{type(channel)} output matched the input (but shouldn't) in the DGD-less case"
-        assert not np.allclose(propagated_signal.samples_time, propagated_signal_no_DGD.samples_time), f"{type(channel)} outputs matched for the cases with and without DGD (but shouldn't)"
+        assert np.allclose(signal.power_W, propagated_signal_no_DGD.power_W), f"{type(channel)} did not retain signal energy in the case without differential group delay"
+        assert not np.allclose(signal.samples_time, propagated_signal_no_DGD.samples_time), f"{type(channel)} output matched the input (but shouldn't) in the case without differential group delay"
+        assert not np.allclose(propagated_signal.samples_time, propagated_signal_no_DGD.samples_time), f"{type(channel)} outputs matched for the cases with and without differential group delay (but shouldn't)"
         jones_matrices_no_DGD = channel.Jones(signal.frequency_angular, verbose = True)
         assert np.allclose(np.einsum('rbspq,rbsq->rbsp', jones_matrices_no_DGD, signal.samples_frequency), propagated_signal_no_DGD.samples_frequency), f"{type(channel)} propagation and Jones matrix produced different results"
-        assert not np.allclose(jones_matrices_no_DGD, jones_matrices), f"{type(channel)} Jones matrices matched in the cases with and without DGD (but shouldn't)"
-        channel._PMD_parameter = parameters.getfloat('FIBRE', 'PMD_parameter')
+        assert not np.allclose(jones_matrices_no_DGD, jones_matrices), f"{type(channel)} Jones matrices matched in the cases with and without differential group delay (but shouldn't)"
+        channel._polarisation_mode_dispersion = parameters.getfloat('FIBRE', 'polarisation_mode_dispersion')
 
         if 'cupy' not in sys.modules: continue
 
@@ -103,16 +102,16 @@ def test_fibre_propagation():
         assert np.allclose(propagated_signal_cuda.samples_time, propagated_signal.samples_time), f"{type(channel)} CUDA- and CPU propagation yielded deviating results"
         assert np.allclose(jones_matrices_cuda, jones_matrices), f"{type(channel)} CUDA- and CPU Jones matrices yielded deviating results"
 
-        channel._PMD_parameter = 0.0
+        channel._polarisation_mode_dispersion = 0.0
         propagated_signal_no_DGD_cuda = channel(signal, verbose = True)
         jones_matrices_no_DGD_cuda = channel.Jones(signal.frequency_angular, verbose = True)
-        channel._PMD_parameter = parameters.getfloat('FIBRE', 'PMD_parameter')
+        channel._polarisation_mode_dispersion = parameters.getfloat('FIBRE', 'polarisation_mode_dispersion')
 
         propagated_signal_no_DGD_cuda.to_device(Device.CPU)
         jones_matrices_no_DGD_cuda = jones_matrices_no_DGD_cuda.get()
 
-        assert np.allclose(propagated_signal_no_DGD_cuda.samples_time, propagated_signal_no_DGD.samples_time), f"{type(channel)} CUDA- and CPU propagation yielded deviating results in the DGD-less case"
-        assert np.allclose(jones_matrices_no_DGD_cuda, jones_matrices_no_DGD), f"{type(channel)} CUDA- and CPU Jones matrices yielded deviating results in the DGD-less case"
+        assert np.allclose(propagated_signal_no_DGD_cuda.samples_time, propagated_signal_no_DGD.samples_time), f"{type(channel)} CUDA- and CPU propagation yielded deviating results in the case without differential group delay"
+        assert np.allclose(jones_matrices_no_DGD_cuda, jones_matrices_no_DGD), f"{type(channel)} CUDA- and CPU Jones matrices yielded deviating results in the case without differential group delay"
         
         signal.to_device(Device.CPU)
         
@@ -125,18 +124,18 @@ def test_fibre_propagation():
     perturbation_birefringence_adder = Perturbation(birefringence_adders = perturbation_array, sample_rate = 1)
     perturbation_angle_adder = Perturbation(major_angles_adders = perturbation_array, sample_rate = 1)
 
-    propagated_signals_birefringence_scaled = channel(signal, transmission_start_times = [0, 30], perturbation = perturbation_birefringence_scalar, verbose = True)
-    jones_matrices_birefringence_scaled = channel.Jones(signal.frequency_angular, transmission_start_times = [0, 30], perturbation = perturbation_birefringence_scalar, verbose = True)
+    propagated_signals_birefringence_scaled = channel(signal, transmission_start_times = [0, 30], perturbations = perturbation_birefringence_scalar, verbose = True)
+    jones_matrices_birefringence_scaled = channel.Jones(signal.frequency_angular, transmission_start_times = [0, 30], perturbations = perturbation_birefringence_scalar, verbose = True)
     propagated_signals_birefringence_scaled.to_device(Device.CPU)
     jones_matrices_birefringence_scaled = jones_matrices_birefringence_scaled.get()
 
-    propagated_signals_birefringence_added = channel(signal, perturbation = perturbation_birefringence_adder, transmission_start_times = [0, 30], verbose = True)
-    jones_matrices_birefringence_added = channel.Jones(signal.frequency_angular, transmission_start_times = [0, 30], perturbation = perturbation_birefringence_adder, verbose = True)
+    propagated_signals_birefringence_added = channel(signal, perturbations = perturbation_birefringence_adder, transmission_start_times = [0, 30], verbose = True)
+    jones_matrices_birefringence_added = channel.Jones(signal.frequency_angular, transmission_start_times = [0, 30], perturbations = perturbation_birefringence_adder, verbose = True)
     propagated_signals_birefringence_added.to_device(Device.CPU)
     jones_matrices_birefringence_added = jones_matrices_birefringence_added.get()
 
-    propagated_signals_major_angles_added = channel(signal, perturbation = perturbation_angle_adder, transmission_start_times = [0, 30], verbose = True)
-    jones_matrices_major_angles_added = channel.Jones(signal.frequency_angular, transmission_start_times = [0, 30], perturbation = perturbation_angle_adder, verbose = True)
+    propagated_signals_major_angles_added = channel(signal, perturbations = perturbation_angle_adder, transmission_start_times = [0, 30], verbose = True)
+    jones_matrices_major_angles_added = channel.Jones(signal.frequency_angular, transmission_start_times = [0, 30], perturbations = perturbation_angle_adder, verbose = True)
     propagated_signals_major_angles_added.to_device(Device.CPU)
     jones_matrices_major_angles_added = jones_matrices_major_angles_added.get()
 
@@ -179,18 +178,16 @@ def test_fibre_propagation():
 #     channel.section_SOP_rotation_stokes = channel_section_SOP_rotation_stokes
 #     assert np.allclose(channel.section_SOP_rotation, channel_section_SOP_rotation), f"section_SOP_rotation not updated correctly after setting section_SOP_rotation_stokes"
 
-
 def test_fibre_initialisation():
     for channel in (FibreMarcuse(parameters), FibreCoarseStep(parameters)):
-        DGD_accumulated = channel.DGD
-        assert np.isclose(np.mean(DGD_accumulated), channel.PMD_parameter * np.sqrt(channel.length), rtol = 2e-1), f"Accumulated DGD does not match PMD parameter"
+        differential_group_delay = channel.differential_group_delay
+        assert np.isclose(np.mean(differential_group_delay), channel.polarisation_mode_dispersion * np.sqrt(channel.length), rtol = 2e-1), f"Accumulated differential group delay does not match polarisation mode dispersion parameter"
 
         if isinstance(channel, FibreMarcuse): continue
-        # Check if accumulated DGD is Maxwellian-distributed.
+        # Check if accumulated differential group delay is Maxwellian-distributed.
         # Curti et al. - Statistical Treatment of the Evolution of the Principal States of Polarization in Single-Mode Fibers
-        assert sp.stats.kstest(DGD_accumulated, lambda x: sp.stats.maxwell.cdf(x, scale = channel.PMD_parameter * np.sqrt(channel.length * np.pi / 8))).pvalue > 0.05, "Accumulated DGD does not approach correct Maxwell-Bolzmann distribution"
-        assert np.allclose(channel.section_PSP.swapaxes(-2, -1).conjugate() @ channel.section_PSP, np.eye(2)), f"Fibre PSP rotation matrices are not unitary"
-        
+        assert sp.stats.kstest(differential_group_delay, lambda x: sp.stats.maxwell.cdf(x, scale = channel.polarisation_mode_dispersion * np.sqrt(channel.length * np.pi / 8))).pvalue > 0.05, "Accumulated differential group delay does not approach correct Maxwell-Bolzmann distribution"
+        assert np.allclose(channel.scramblers.swapaxes(-2, -1).conjugate() @ channel.scramblers, np.eye(2)), f"Fibre PSP rotation matrices are not unitary"
 
 def test_fibre_path():
     for channel in (FibreMarcuse(parameters_geographic), FibreCoarseStep(parameters_geographic)):
