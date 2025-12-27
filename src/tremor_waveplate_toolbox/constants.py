@@ -23,10 +23,10 @@ Device = Enum('Device', [
     'CUDA'
 ])
 
-# DGD distributing methods
-Distribution = Enum('Distribution', [
+# Birefringence modulus models
+ModulusModel = Enum('ModulusModel', [
     'RANDOM',
-    'UNIFORM'
+    'FIXED'
 ])
 
 # Pauli spin matrices

@@ -16,7 +16,7 @@ except:
 import obspy as op
 import refractiveindex
 
-from .constants import Device, Domain
+from .constants import Device, Domain, ModulusModel
 from .signal import Signal
 from .perturbation import Perturbation
 from .path import Path
@@ -51,6 +51,7 @@ class Fibre(ABC):
         assert 'realisation_count'            in parameters['FIBRE'], f"'realisation_count' is missing from parameters section 'FIBRE'."
         assert 'photoelasticity'              in parameters['FIBRE'], f"'photoelasticity' is missing from parameters section 'FIBRE'"
         assert 'path_coordinates'             in parameters['FIBRE'] or 'section_count' in parameters['FIBRE'], f"Parameters section 'FIBRE' must contain variable 'path_coordinates' or 'section_count'."
+        assert 'modulus_model'                in parameters['FIBRE'], f"'modulus_model' is missing from parameters section 'FIBRE'."
 
         self._correlation_length           = parameters.getfloat('FIBRE', 'correlation_length')
         self._beat_length                  = parameters.getfloat('FIBRE', 'beat_length')
@@ -58,6 +59,7 @@ class Fibre(ABC):
         self._polarisation_mode_dispersion = parameters.getfloat('FIBRE', 'polarisation_mode_dispersion')
         self._realisation_count            = int(parameters.getfloat('FIBRE', 'realisation_count'))
         self._photoelasticity              = parameters.getfloat('FIBRE', 'photoelasticity')
+        self._modulus_model                = ModulusModel[parameters.get('FIBRE', 'modulus_model')]
         self._material                     = refractiveindex.RefractiveIndexMaterial(
             shelf = 'glass',
             book  = 'fused_silica',
@@ -93,12 +95,26 @@ class Fibre(ABC):
                     dtype      = float
                 ))
 
-    @abstractmethod
     def _init_birefringence(self):
         """
-        Initialise random birefringence per realisation and fibre section in ps.
+        Generate differential phase shifts, group delays, and major axes orientations or scramblers.
         """
-        pass
+        match self.modulus_model:
+            case ModulusModel.FIXED:  self._init_birefringence_fixed()
+            case ModulusModel.RANDOM: self._init_birefringence_random()
+            case _: raise AssertionError(f"modulus_model must be ModulusModel.FIXED or ModulusModel.RANDOM, but was {self.modulus_model}")
+
+    @abstractmethod
+    def _init_birefringence_fixed(self):
+        """
+        Initialise birefringences with equal moduli, e.g. using the fixed modulus model.
+        """
+
+    @abstractmethod
+    def _init_birefringence_random(self):
+        """
+        Initialise birefringences with random moduli, e.g. using the random modulus model.
+        """
 
     def __call__(self, signal: Signal, transmission_start_times: (float, np.ndarray) = 0, perturbations: (Perturbation, list) = [], verbose: bool = False) -> Signal:
         """
@@ -244,6 +260,7 @@ class Fibre(ABC):
             'polarisation_mode_dispersion': self.polarisation_mode_dispersion,
             'realisation_count':            self.realisation_count,
             'photoelasticity':              self.photoelasticity,
+            'modulus_model':                self.modulus_model.name,
             'differential_group_delays':    self.differential_group_delays.tolist()
         }
 
@@ -273,6 +290,7 @@ class Fibre(ABC):
         parameters.set('FIBRE', 'polarisation_mode_dispersion', str(fibre_dict['polarisation_mode_dispersion']))
         parameters.set('FIBRE', 'realisation_count',            str(fibre_dict['realisation_count']))
         parameters.set('FIBRE', 'photoelasticity',              str(fibre_dict['photoelasticity']))
+        parameters.set('FIBRE', 'modulus_model'),               fibre_dict['modulus_model']
 
         section_path = Path.from_dict(fibre_dict['section_path'])
         parameters.set('FIBRE', 'section_length', str(section_path.lengths[0]))
@@ -298,7 +316,8 @@ class Fibre(ABC):
             self._realisation_count                == other._realisation_count            and \
             self._section_path                     == other._section_path                 and \
             self._path                             == other._path                         and \
-            np.all(self._differential_group_delays == other._differential_group_delays)
+            np.all(self._differential_group_delays == other._differential_group_delays)   and \
+            self._modulus_model                    == other._modulus_model
 
     @property
     def path(self) -> Path:
@@ -425,3 +444,14 @@ class Fibre(ABC):
     @differential_group_delay.setter
     def differential_group_delay(self, value):
         raise AttributeError("The accumulated differential_group_delay cannot be set directly; set section differential_group_delays instead")
+
+    @property
+    def modulus_model(self) -> ModulusModel:
+        """
+        The modulus model with which the birefringence is initialised (FIXED or RANDOM)
+        """
+        return self._modulus_model
+
+    @modulus_model.setter
+    def modulus_model(self, value):
+        raise AttributeError("The fibre birefringence modulus model cannot be changed after instantiation")

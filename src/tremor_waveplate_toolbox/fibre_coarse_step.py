@@ -21,20 +21,33 @@ class FibreCoarseStep(Fibre):
     External perturbations can be modelled as a change in differential phase or major birefringence axes orientations.
     """
     @override
-    def _init_birefringence(self):
+    def _init_birefringence_fixed(self):
         """
-        Randomly draw differential group delays and polarisation scramblers per section.
+        Initialise fixed differential group delays for the coarse-step method.
         """
-        # First, generate differential group delay from Gaussian distributions
-        differential_group_delays_mean = self.polarisation_mode_dispersion * np.sqrt(self.section_path.lengths * np.pi * 3 / 8) # Czegledi et al. (2016): Polarization-Mode Dispersion Aware Digital Backpropagation, Prola et al. (1997): PMD Emulators and Signal Distortion in 2.48-Gb/s IM-DD Lightwave Systems
-        differential_group_delays_deviation = differential_group_delays_mean / 5
-        self.differential_group_delays = np.random.default_rng().normal(
-            loc   = differential_group_delays_mean[:, None],
-            scale = differential_group_delays_deviation[:, None],
-            size  = (self.section_path.edge_count, self.realisation_count)
+        self.differential_group_delays = np.tile(
+            self.polarisation_mode_dispersion * np.sqrt(3 * np.pi * self.section_path.lengths / 8)[:, None], # Czegledi et al. (2016): Polarization-Mode Dispersion Aware Digital Backpropagation, Prola et al. (1997): PMD Emulators and Signal Distortion in 2.48-Gb/s IM-DD Lightwave Systems
+            (1, self.realisation_count)
         )
+        self._init_scramblers()
 
-        # Now, sample polarisation scramblers uniformly
+    @override
+    def _init_birefringence_random(self):
+        """
+        Initialise random Gaussian differential group delays for the coarse-step method.
+        """
+        self._init_birefringence_fixed()
+        self.differential_group_delays = np.random.default_rng().normal(
+            loc   = self.differential_group_delays,
+            scale = self.differential_group_delays / 5
+        )
+        self._init_scramblers()
+
+    @override
+    def _init_scramblers(self):
+        """
+        Initialise random scramblers between fibre sections that perform a frequency-invariant scrambling of the state of polarisation.
+        """
         random_vectors = np.random.default_rng().normal(
            size = (self.section_path.edge_count, self.realisation_count, 4)
         ) # Initialise [cos(theta), a * sin(theta)], Czegledi et al. (2016): Polarization Drift Channel Model for Coherent Fibre-Optic Systems
@@ -43,7 +56,7 @@ class FibreCoarseStep(Fibre):
         rotation_angles   = np.arccos(random_vectors[..., 0])
         rotation_axes     = random_vectors[..., 1:] / np.sin(rotation_angles)[..., None]
         self.scramblers   = sp.linalg.expm(-1j * rotation_angles[:, :, None, None] * np.einsum('sra,apq->srpq', rotation_axes, PAULI_VECTOR))
-        
+
     @override
     def _propagate_master(self, signal: Signal, frequency_angular: np.ndarray, transmission_start_times: (float, np.ndarray) = 0, perturbations: (Perturbation, list) = [], verbose: bool = False) -> Signal:
         """

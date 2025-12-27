@@ -22,14 +22,44 @@ class FibreMarcuse(Fibre):
     External perturbations can be modelled as a change in differential phase or major birefringence axes orientations.
     """
     @override
-    def _init_birefringence(self):
+    def _init_birefringence_fixed(self):
         """
-        Generate differential phase shifts, group delays, and major axes orientations, for use in Marcuse's split-step CNLSE.
+        Initialise fixed birefringences and a random walk for the major birefringence angles for Marcuse's split-step method, using the fixed modulus model.
         """
-        # self.section_DGD = np.tile(self.PMD_parameter / np.sqrt(8 * self.correlation_length) * self.section_path.lengths[:, None], (1, self.realisation_count))
         self.differential_phase_shifts = np.tile(2 * np.pi / self.beat_length * self.section_path.lengths[:, None], (1, self.realisation_count))
         self.differential_group_delays = np.tile(self.polarisation_mode_dispersion / np.sqrt(2 * self.correlation_length) * self.section_path.lengths[:, None], (1, self.realisation_count))
-        self.major_angles              = np.cumsum(np.sqrt(self.section_path.lengths / (2 * self.correlation_length))[:, None] * np.random.default_rng().normal(size = (self.section_path.edge_count, self.realisation_count)), axis = 0)
+
+        first_major_angle = 0
+        noise = np.random.default_rng().normal(size = (self.section_path.edge_count, self.realisation_count))
+        major_angle_steps = np.sqrt(self.section_path.lengths / (2 * self.correlation_length))[:, None] * noise
+        self.major_angles = np.cumsum(major_angle_steps, axis = 0)
+    
+    @override
+    def _init_birefringence_random(self):
+        """
+        Initialise random birefringences and major birefringence angles for Marcuse's split-step method using the random modulus model (a Langevin process).
+        """
+        # Initialise differential phase shift and major birefringence angles jointly
+        # first_phase_x = 2 * np.pi / self.beat_length * self.section_path.lengths[0]
+        noise_x = np.random.default_rng().normal(size = (self.section_path.edge_count, self.realisation_count))
+        phase_steps_x = np.sqrt(2 * np.pi ** 2 * (np.exp(2 * self.section_path.lengths / self.correlation_length) - 1) * self.section_path.lengths ** 2 / self.beat_length ** 2)[:, None] * noise_x
+        # phase_steps_x = np.concatenate([np.full(fill_value = first_phase_x, shape = (1, self.realisation_count)), phase_steps_x], axis = 0)
+        phases_x = np.cumsum(phase_steps_x, axis = 0)
+        phases_x[1:] = phases_x[1:] / np.exp(self.section_path.lengths[1:] / self.correlation_length)[:, None]
+
+        # first_phase_y = 0
+        noise_y = np.random.default_rng().normal(size = (self.section_path.edge_count, self.realisation_count))
+        phase_steps_y = np.sqrt(2 * np.pi ** 2 * (np.exp(2 * self.section_path.lengths / self.correlation_length) - 1) * self.section_path.lengths ** 2 / self.beat_length ** 2)[:, None] * noise_y
+        # phase_steps_y = np.concatenate([np.full(fill_value = first_phase_y, shape = (1, self.realisation_count)), phase_steps_y], axis = 0)
+        phases_y = np.cumsum(phase_steps_y, axis = 0)
+        phases_y[1:] = phases_y[1:] / np.exp(self.section_path.lengths[1:] / self.correlation_length)[:, None]
+
+        self.differential_phase_shifts = np.sqrt(phases_x ** 2 + phases_y ** 2)
+        self.major_angles = np.arctan2(phases_y, phases_x) / 2
+
+        # Initialise differential group delay
+        noise = np.random.default_rng().normal(size = (self.section_path.edge_count, self.realisation_count))
+        self.differential_group_delays = np.sqrt(self.polarisation_mode_dispersion ** 2 * self.section_path.lengths ** 3 / (2 * self.correlation_length ** 2 * (np.exp(-self.section_path.lengths / self.correlation_length) + self.section_path.lengths / self.correlation_length - 1)))[:, None] * noise
 
     @override
     def _propagate_master(self, signal: Signal, frequency_angular: np.ndarray, transmission_start_times: (float, np.ndarray) = 0, perturbations: (Perturbation, list) = [], verbose: bool = False) -> Signal:
