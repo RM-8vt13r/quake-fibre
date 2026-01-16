@@ -3,6 +3,8 @@ An optical fibre channel model base class for dual-polarisation transmission, ba
 Currently it models only PMD effects: (perturbed) differential phase and major birefringence axes rotations.
 """
 from typing import override
+from tqdm import tqdm
+import logging
 
 import numpy as np
 import scipy as sp
@@ -11,6 +13,8 @@ from .fibre import Fibre
 from .signal import Signal
 from .perturbation import Perturbation
 from .constants import Device, PAULI_VECTOR
+
+logger = logging.getLogger()
 
 class FibreCoarseStep(Fibre):
     """
@@ -58,12 +62,14 @@ class FibreCoarseStep(Fibre):
         self.scramblers   = sp.linalg.expm(-1j * rotation_angles[:, :, None, None] * np.einsum('sra,apq->srpq', rotation_axes, PAULI_VECTOR))
 
     @override
-    def _propagate_master(self, signal: Signal, frequency_angular: np.ndarray, transmission_start_times: (float, np.ndarray) = 0, perturbations: (Perturbation, list) = [], verbose: bool = False) -> Signal:
+    def _propagate_master(self, signal: Signal, frequency_angular: np.ndarray, transmission_start_times: (float, np.ndarray) = 0, perturbations: (Perturbation, list) = []) -> Signal:
         """
         Master function both for propagating a signal or building a Jones transfer matrix
         """
         if perturbations is None: perturbations = ()
         assert len(perturbations) == 0, f"Perturbations not yet implemented in the coarse-step fibre model"
+        assert self.chromatic_dispersion == 0, f"Chromatic dispersion not yet implemented in the coarse-step fibre model"
+        assert self.nonlinearity == 0, f"Nonlinearity not yet implemented in the coarse-step fibre model"
 
         if not isinstance(transmission_start_times, (float, int)):
             transmission_start_times = signal.xp.array(transmission_start_times)
@@ -75,12 +81,10 @@ class FibreCoarseStep(Fibre):
         differential_group_delays = signal.xp.array(self.differential_group_delays[:, :, *(None,) * -signal.sample_axis_negative]) # [S, R, 1, 1]/[S, R, 1, 1, 1]
         scramblers = signal.xp.array(self.scramblers[:, :, *(None,) * -(1 + signal.sample_axis_negative)]) # [S, R, 1, 2, 2]/[S, R, 1, 1, 2, 2]
 
-        signal = signal.copy()
         frequency_angular = frequency_angular[*(None,) * 2, :, *(None,) * -(2 + signal.sample_axis_negative)] # [1, 1, F]/[1, 1, F, 1]
 
         iterable = zip(differential_group_delays, scramblers)
-        if verbose:
-            from tqdm import tqdm
+        if logger.isEnabledFor(logging.DEBUG):
             iterable = tqdm(
                 iterable,
                 total = self.section_path.edge_count,
@@ -93,13 +97,13 @@ class FibreCoarseStep(Fibre):
                 differential_group_delay = signal.xp.exp(-0.5j * differential_group_delay * frequency_angular * 1e-12) # [R, 1, 1]/[R, 1, 1, 1] * [1, 1, F]/[1, 1, F, 1] = [R, 1, F]/[R, 1, F, 1]
                 signal.samples_frequency = signal.samples_frequency * signal.xp.stack([differential_group_delay, differential_group_delay.conjugate()], axis = -1) # [R, B, F, 2]/[R, B, F, 2, 2] * [R, 1, F, 2]/[R, 1, F, 1, 2] = [R, B, F, 2]/[R, B, F, 2, 2]
 
-            # Scramble state of polarisation
-            signal.samples_frequency = signal.xp.einsum( # [R, 1, 2, 2]/[R, 1, 1, 2, 2] @ [R, B, F, 2]/[R, B, F, 2, 2] = [R, B, F, 2]/[R, B, F, 2, 2]
-                '...pq,...sq->...sp',
-                scrambler,
-                signal.samples_frequency,
-                optimize = True
-            )
+                # Scramble state of polarisation
+                signal.samples_frequency = signal.xp.einsum( # [R, 1, 2, 2]/[R, 1, 1, 2, 2] @ [R, B, F, 2]/[R, B, F, 2, 2] = [R, B, F, 2]/[R, B, F, 2, 2]
+                    '...pq,...sq->...sp',
+                    scrambler,
+                    signal.samples_frequency,
+                    optimize = True
+                )
 
         return signal
 

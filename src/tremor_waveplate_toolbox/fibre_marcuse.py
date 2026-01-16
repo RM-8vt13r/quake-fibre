@@ -3,6 +3,8 @@ An optical fibre channel model base class for dual-polarisation transmission, ba
 Currently it models only polarisation mode dispersion: (perturbed) birefringence and major axes rotations.
 """
 from typing import override
+from tqdm import tqdm
+import logging
 
 import numpy as np
 
@@ -10,7 +12,13 @@ from .fibre import Fibre
 from .signal import Signal
 from .perturbation import Perturbation
 from .utils import rotation_matrix
-from .constants import Device
+from .constants import Device, PAULI_3
+try:
+    from .constants import PAULI_3_CUDA
+except:
+    pass
+
+logger = logging.getLogger()
 
 class FibreMarcuse(Fibre):
     """
@@ -62,36 +70,52 @@ class FibreMarcuse(Fibre):
         self.differential_group_delays = np.sqrt(self.polarisation_mode_dispersion ** 2 * self.section_path.lengths ** 3 / (2 * self.correlation_length ** 2 * (np.exp(-self.section_path.lengths / self.correlation_length) + self.section_path.lengths / self.correlation_length - 1)))[:, None] * noise
 
     @override
-    def _propagate_master(self, signal: Signal, frequency_angular: np.ndarray, transmission_start_times: (float, np.ndarray) = 0, perturbations: (Perturbation, list) = [], verbose: bool = False) -> Signal:
+    def _propagate_master(self, signal: Signal, frequency_angular: np.ndarray, transmission_start_times: (float, np.ndarray) = 0, perturbations: (Perturbation, list) = []) -> Signal:
         """
-        Master function both for propagating a signal or building a Jones transfer matrix
+        Master function both for propagating a signal or building a Jones transfer matrix. See documentation in fibre.py.
         """
         signal, frequency_angular = self._prepare_signal(signal, frequency_angular)
         perturbations             = self._prepare_perturbations(signal, perturbations)
         transmission_start_times  = self._prepare_transmission_start_times(signal, transmission_start_times)
-        section_iterable          = self._prepare_section_iterable(signal, perturbations, verbose)
+        section_iterable          = self._prepare_section_iterable(signal, perturbations)
 
-        for section_index, (differential_phase_shift, differential_group_delay, major_angle) in enumerate(section_iterable):
-            # Prepare perturbations-related variables
-            perturbations_sample_masks, perturbations_sample_indices = self._perturbations_indices(signal, perturbations, transmission_start_times, section_index)
+        for section_index, (section_length, differential_phase_shift, differential_group_delay, major_angle) in enumerate(section_iterable):
+            if self.chromatic_dispersion != 0.:
+                # Apply half of chromatic dispersion
+                signal = self._apply_chromatic_dispersion(signal, section_length / 2)
 
-            # Rotate to the (perturbed) local birefringence axes
-            major_angle    = self._perturb_major_angle(signal, section_index, major_angle, perturbations, perturbations_sample_masks, perturbations_sample_indices)
-            major_rotation = rotation_matrix(major_angle)
-            signal         = self._to_major_axes(signal, major_rotation)
-            
-            # Apply (perturbed/frequency-dependent) differential phase
-            birefringence = self._construct_birefringence(differential_phase_shift, differential_group_delay, frequency_angular)
-            birefringence = self._perturb_birefringence(signal, section_index, birefringence, perturbations, perturbations_sample_masks, perturbations_sample_indices)
-            signal        = self._apply_birefringence(signal, birefringence)
+            if self.polarisation_mode_dispersion != 0.:
+                # Prepare perturbations-related variables
+                perturbations_sample_masks, perturbations_sample_indices = self._perturbations_indices(signal, perturbations, transmission_start_times, section_index)
 
-            # Rotate back to the reference birefringence axes
-            signal = self._to_major_axes(signal, signal.xp.moveaxis(major_rotation, -1, -2))
+                # Rotate to the (perturbed) local birefringence axes
+                major_angle    = self._perturb_major_angle(signal, section_index, major_angle, perturbations, perturbations_sample_masks, perturbations_sample_indices)
+                major_rotation = rotation_matrix(-major_angle)
+                signal         = self._to_major_axes(signal, major_rotation)
+                
+                # Apply half of the (perturbed/frequency-dependent) differential phase
+                birefringence = self._construct_birefringence(differential_phase_shift, differential_group_delay, frequency_angular)
+                birefringence = self._perturb_birefringence(signal, section_index, birefringence, perturbations, perturbations_sample_masks, perturbations_sample_indices)
+                signal        = self._apply_birefringence(signal, birefringence / 2)
+
+            if self.nonlinearity != 0.:
+                # Apply nonlinearity
+                signal = self._apply_nonlinearity(signal, section_length)
+
+            if self.chromatic_dispersion != 0.:
+                # Apply the second half of chromatic dispersion
+                signal = self._apply_chromatic_dispersion(signal, section_length / 2)
+
+            if self.polarisation_mode_dispersion != 0.:
+                # Apply the second half of polarisation mode dispersion
+                signal = self._apply_birefringence(signal, birefringence / 2)
+
+                # Rotate back to the reference birefringence axes
+                signal = self._to_major_axes(signal, signal.xp.moveaxis(major_rotation, -1, -2))
 
         return signal
 
     def _prepare_signal(self, signal, frequency_angular):
-        signal = signal.copy()
         if signal.device == Device.CUDA: signal.to_device(Device.CUDA) # Ensure that the signal resides in the currently active GPU
         frequency_angular = frequency_angular[*(None,) * 2, :, *(None,) * -(2 + signal.sample_axis_negative)] # [1, 1, F]/[1, 1, F, 1]
         return signal, frequency_angular
@@ -116,14 +140,13 @@ class FibreMarcuse(Fibre):
 
         return transmission_start_times
 
-    def _prepare_section_iterable(self, signal, perturbations, verbose):
+    def _prepare_section_iterable(self, signal, perturbations):
         differential_phase_shifts = signal.xp.array(self.differential_phase_shifts[:, :, *(None,) * -signal.sample_axis_negative]) # [S, R, 1, 1]/[S, R, 1, 1, 1]
         differential_group_delays = signal.xp.array(self.differential_group_delays[:, :, *(None,) * -signal.sample_axis_negative]) # [S, R, 1, 1]/[S, R, 1, 1, 1]
         major_rotations = signal.xp.array(self.major_angles[:, :, *(None,) * -(1 + signal.sample_axis_negative)]) # [S, R, 1]/[S, R, 1, 1]
 
-        iterable = zip(differential_phase_shifts, differential_group_delays, major_rotations)
-        if verbose:
-            from tqdm import tqdm
+        iterable = zip(self.section_path.lengths, differential_phase_shifts, differential_group_delays, major_rotations)
+        if logger.isEnabledFor(logging.INFO):
             iterable = tqdm(
                 iterable,
                 total = self.section_path.edge_count,
@@ -131,6 +154,38 @@ class FibreMarcuse(Fibre):
             )
 
         return iterable
+
+    def _apply_chromatic_dispersion(self, signal, section_length):
+        signal.samples_frequency = signal.samples_frequency * signal.xp.exp(1j * 0.5 * self.chromatic_dispersion * signal.frequency_angular ** 2 * section_length * 1e-24)[None, None, :, None]
+        return signal
+
+    def _apply_nonlinearity(self, signal, section_length):
+        """
+        Nonlinearity is applied only when propagating a signal (not when building a Jones matrix). Therefore, signal always has shape [R, B, S, P] here with realisations R, batch size B, time/frequency axis S and polarisations P = 2
+        """
+        # signal.samples_time = signal.samples_time * signal.xp.exp(1j * 8 / 9 * self.nonlinearity * section_length * np.linalg.norm(signal.samples_time, axis = -1)[:, :, :, None] ** 2) # ??? Wrong for now, look at Marcuse's paper
+        signal_power   = signal.xp.linalg.norm(signal.samples_time, axis = -1)[:, :, :, None, None] ** 2 # [R, B, S, 1, 1]
+
+        signal_rotator = -1/3 * signal.xp.einsum(
+            'rbsp,pq,rbsq->rbs',
+            signal.samples_time,
+            PAULI_3 if signal.device == Device.CPU else PAULI_3_CUDA,
+            signal.samples_time,
+            optimize = True
+        )[:, :, :, None, None] * (PAULI_3 if signal.device == Device.CPU else PAULI_3_CUDA) # [R, B, S, 2, 2]
+        
+        nonlinearity_operator = signal.xp.exp(1j * self.nonlinearity * (signal_power + signal_rotator) * section_length) # Eq. 2 in Marcuse et al. (1997), Eq. 5 in Menyuk et al. (1987). ??? halve kerr parameter as in Menyuk et al?
+        nonlinearity_operator = signal.xp.moveaxis(nonlinearity_operator, (-1, -2)) # Transpose operator for efficient einsum
+        
+        signal.samples_time = signal.xp.einsum(
+            'rbsqp,rbsq->rbsp',
+            nonlinearity_operator,
+            signal.samples_time,
+            optimize = True
+        )
+
+
+        return signal
 
     def _perturbations_indices(self, signal, perturbations, transmission_start_times, section_index):
         perturbations_sample_times = transmission_start_times + self.section_path.centre_positions[section_index] / self.group_velocity(signal.carrier_wavelength) # [B,]
@@ -144,10 +199,10 @@ class FibreMarcuse(Fibre):
         
     def _perturb_major_angle(self, signal, section_index, section_major_angle, perturbations, perturbations_sample_masks, perturbations_sample_indices):
         for perturbation, perturbation_sample_mask, perturbation_sample_indices in zip(perturbations, perturbations_sample_masks, perturbations_sample_indices):
-            if perturbation.major_angles_adders is None: continue
+            if perturbation.twists is None: continue
             section_major_angle = section_major_angle + signal.xp.where( # [R, 1]/[R, 1, 1] + [1, B]/[1, B, 1] = [R, B]/[R, B, 1]
                     perturbation_sample_mask,
-                    perturbation.major_angles_adders[section_index, perturbation_sample_indices],
+                    perturbation.twists[section_index, perturbation_sample_indices],
                     0.0
                 )[None, :, *(None,) * -(2 + signal.sample_axis_negative)]
 
@@ -164,31 +219,30 @@ class FibreMarcuse(Fibre):
         return signal
 
     def _construct_birefringence(self, differential_phase_shift, differential_group_delay, frequency_angular):
-        if self.polarisation_mode_dispersion != 0:
-            differential_phase_shift = differential_phase_shift + differential_group_delay * frequency_angular * 1e-12 # [R, 1, 1]/[R, 1, 1, 1] + [R, 1, 1]/[R, 1, 1, 1] * [1, 1, F]/[1, 1, F, 1] = [R, 1, F]/[R, 1, F, 1]
+        differential_phase_shift = differential_phase_shift + differential_group_delay * frequency_angular * 1e-12 # [R, 1, 1]/[R, 1, 1, 1] + [R, 1, 1]/[R, 1, 1, 1] * [1, 1, F]/[1, 1, F, 1] = [R, 1, F]/[R, 1, F, 1]
         return differential_phase_shift
 
     def _perturb_birefringence(self, signal, section_index, birefringence, perturbations, perturbations_sample_masks, perturbations_sample_indices):
         for perturbation, perturbation_sample_mask, perturbation_sample_indices in zip(perturbations, perturbations_sample_masks, perturbations_sample_indices):
-            if perturbation.birefringence_scalars is None: continue
+            if perturbation.material_strains is None: continue
             birefringence = birefringence * signal.xp.where(
                     perturbation_sample_mask,
-                    perturbation.birefringence_scalars[section_index, perturbation_sample_indices],
+                    1.0 + self.photoelasticity * perturbation.material_strains[section_index, perturbation_sample_indices],
                     1.0
                 )[None, :, *(None,) * -(1 + signal.sample_axis_negative)] # [R, 1, F]/[R, 1, F, 1] * [1, B, 1]/[1, B, 1, 1] = [R, B, F]/[R, B, F, 1]
 
         for perturbation, perturbation_sample_mask, perturbation_sample_indices in zip(perturbations, perturbations_sample_masks, perturbations_sample_indices):
-            if perturbation.birefringence_adders is None: continue
+            if perturbation.differential_phase_shifts is None: continue
             birefringence = birefringence + signal.xp.where(
                     perturbation_sample_mask,
-                    perturbation.birefringence_adders[section_index, perturbation_sample_indices],
+                    perturbation.differential_phase_shifts[section_index, perturbation_sample_indices],
                     0.0
                 )[None, :, *(None,) * -(1 + signal.sample_axis_negative)] # [R, B, F]/[R, B, F, 1] * [1, B, 1]/[1, B, 1, 1] = [R, B, F]/[R, B, F, 1]
 
         return birefringence
 
     def _apply_birefringence(self, signal, birefringence):
-        birefringence = signal.xp.exp(-0.5j * birefringence)
+        birefringence = signal.xp.exp(0.5j * birefringence)
         signal.samples_frequency = signal.samples_frequency * signal.xp.stack([birefringence, birefringence.conjugate()], axis = -1) # [R, B, F, 2]/[R, B, F, 2, 2] * [R, B, F, 2]/[R, B, F, 1, 2] = [R, B, F, 2]/[R, B, F, 2, 2]
         return signal
 
@@ -216,7 +270,7 @@ class FibreMarcuse(Fibre):
     @property
     def differential_phase_shifts(self) -> np.ndarray:
         """
-        [np.ndarray], dtype [float] local differential phase shift between the major polarisation axes per section in radians
+        [np.ndarray], dtype [float] local differential phase shift between the major polarisation axes per section in radians. Shape [S, R] where S is the number of fibre sections and R the number of realisations.
         """
         return self._differential_phase_shifts
 
@@ -231,7 +285,7 @@ class FibreMarcuse(Fibre):
     @property
     def major_angles(self) -> np.ndarray:
         """
-        [np.ndarray], dtype [float] orientation of the major axes of birefringence per section in radians
+        [np.ndarray], dtype [float] orientation of the major axes of birefringence per section in radians. Shape [S, R] where S is the number of fibre sections and R the number of realisations.
         """
         return self._major_angles
 

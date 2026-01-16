@@ -11,7 +11,7 @@ class Path:
         Inputs:
         - [np.ndarray] longitudes: list of coordinate longitudes in degrees, shape [C,]; if None, lengths must be set
         - [np.ndarray] latitudes: list of coordinate latitudes in degrees, shape [C,]; if None, lengths must be set
-        - [np.ndarray] lengths: list of edge lengths, shape [C,]; if lengths is specified (not None), longitudes and latitudes will be ignored, and coordinate-related Path properties will be unavailable
+        - [np.ndarray] lengths: list of edge lengths in km, shape [C,]; if lengths is specified (not None), longitudes and latitudes will be ignored, and coordinate-related Path properties will be unavailable
         """
         if lengths is None:
             longitudes = np.array(longitudes)
@@ -127,7 +127,7 @@ class Path:
     @property
     def lengths(self):
         """
-        [np.ndarray] length of each path edge, shape [C-1,]
+        [np.ndarray] length of each path edge in km, shape [C-1,]
         """
         return self._lengths
 

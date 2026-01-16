@@ -15,9 +15,9 @@ from .signal import Signal
 
 class Perturbation(Signal):
     def __init__(self,
-                birefringence_scalars: np.ndarray = None,
-                birefringence_adders: np.ndarray = None,
-                major_angles_adders: np.ndarray = None,
+                material_strains: np.ndarray = None,
+                differential_phase_shifts: np.ndarray = None,
+                twists: np.ndarray = None,
                 sample_rate: float = 1,
                 domain: Domain = Domain.TIME
             ):
@@ -25,26 +25,26 @@ class Perturbation(Signal):
         Create a new Signal.
 
         Inputs:
-        - birefringence_scalars [np.ndarray] or [cp.ndarray]: None, or values to scale birefringence by, shape [K,T] with K fibre sections and T time samples.
-        - birefringence_adders [np.ndarray] or [cp.ndarray]: None, or values to add to birefringence after scaling, shape [K,T] with K fibre sections and T time samples.
-        - major_angles_adders [np.ndarray] or [cp.ndarray]: None, or values to add to major birefringence axes angles, shape [K,T] with K fibre sections and T time samples.
+        - material_strains [np.ndarray] or [cp.ndarray]: None, or values to scale birefringence with, shape [K,T] with K fibre sections and T time samples. Birefringence in fibres is scaled by 1 + photoelasticity * material_strains
+        - differential_phase_shifts [np.ndarray] or [cp.ndarray]: None, or values to add to birefringence after scaling, shape [K,T] with K fibre sections and T time samples.
+        - twists [np.ndarray] or [cp.ndarray]: None, or values to add to major birefringence axes angles, shape [K,T] with K fibre sections and T time samples.
         - sample_rate [float]: the sample frequency in Hz.
         - domain [Domain]: domain (time or frequency) in which samples is given.
         """
         self._perturbation_presence = []
         samples = None # np.zeros(shape = [1, 1, 3], dtype = float)
-        for index, array in enumerate((birefringence_scalars, birefringence_adders, major_angles_adders)):
+        for index, array in enumerate((material_strains, differential_phase_shifts, twists)):
             if array is None:
                 self._perturbation_presence.append(False)
                 continue
 
-            if samples is None: samples = np.zeros(shape = [*array.shape, 3], dtype = float)
+            if samples is None: samples = np.zeros(shape = (*array.shape, 3), dtype = complex)
 
             try:
-                samples[:, :, index] = samples[:, :, index] + array
+                samples[:, :, index] = samples[:, :, index] + array.astype(complex)
                 self._perturbation_presence.append(True)
             except:
-                raise AssertionError(f"birefringence_scalars, birefringence_adders and major_angles_adders must be None or have the same shapes [K, T], but had shapes {[None if a is None else a.shape for a in (birefringence_scalars, birefringence_adders, major_angles_adders)]}")
+                raise AssertionError(f"material_strains, differential_phase_shifts and twists must be None or have the same shapes [K, T], but had shapes {[None if a is None else a.shape for a in (material_strains, differential_phase_shifts, twists)]}")
 
         assert np.any(self._perturbation_presence), "Cannot create an empty perturbation signal"
 
@@ -57,34 +57,35 @@ class Perturbation(Signal):
             )
 
     @property
-    def birefringence_scalars(self):
+    def material_strains(self):
         """
-        [np.ndarray, cp.ndarray] The birefringence scalars of this Perturbation in the time domain, shape [K, T], or None if this perturbation is not present
+        [np.ndarray, cp.ndarray] The birefringence scalars of this Perturbation in the time domain, shape [K, T], or None if this perturbation is not present.
+        Note that this quantity assumes a photoelasticity of one.
         """
         return self.samples_time[:, :, 0].real if self._perturbation_presence[0] else None
 
-    @birefringence_scalars.setter
-    def birefringence_scalars(self, value):
-        raise AttributeError("Cannot set birefringence_scalars after creating the Perturbation; make a new Perturbation instead")
+    @material_strains.setter
+    def material_strains(self, value):
+        raise AttributeError("Cannot set material_strains after creating the Perturbation; make a new Perturbation instead")
 
     @property
-    def birefringence_adders(self):
+    def differential_phase_shifts(self):
         """
         [np.ndarray, cp.ndarray] The birefringence adders of this Perturbation in the time domain, shape [K, T], or None if this perturbation is not present
         """
         return self.samples_time[:, :, 1].real if self._perturbation_presence[1] else None
 
-    @birefringence_adders.setter
-    def birefringence_adders(self, value):
-        raise AttributeError("Cannot set birefringence_adders after creating the Perturbation; make a new Perturbation instead")
+    @differential_phase_shifts.setter
+    def differential_phase_shifts(self, value):
+        raise AttributeError("Cannot set differential_phase_shifts after creating the Perturbation; make a new Perturbation instead")
 
     @property
-    def major_angles_adders(self):
+    def twists(self):
         """
         [np.ndarray, cp.ndarray] The major angles adders of this Perturbation in the time domain, shape [K, T], or None if this perturbation is not present
         """
         return self.samples_time[:, :, 2].real if self._perturbation_presence[2] else None
 
-    @major_angles_adders.setter
-    def major_angles_adders(self, value):
-        raise AttributeError("Cannot set major_angles_adders after creating the Perturbation; make a new Perturbation instead")
+    @twists.setter
+    def twists(self, value):
+        raise AttributeError("Cannot set twists after creating the Perturbation; make a new Perturbation instead")

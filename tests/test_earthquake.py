@@ -28,7 +28,7 @@ def test_earthquake():
     path = Path(*zip(*path_coordinates))
     earthquake = Earthquake(parameters)
 
-    displacements_local, displacements_global, displacements_projected, strains_projected = earthquake.request_projected_strains(path, parameters.getint('EARTHQUAKE', 'batch_size'), True)
+    displacements_local, displacements_global, displacements_projected, strains_projected = earthquake.request_projected_strains(path, parameters.getint('EARTHQUAKE', 'batch_size'))
     # assert len(times.shape) == 1, f"times should have one dimension, but had shape {times.shape}"
     assert displacements_local.shape[0] == path.vertex_count, f"path vertex count should match the first dimension of displacements_local, but these were {path.vertex_count} and {displacements_local.shape}"
     assert displacements_local.shape[2] == 3, f"displacements_local should have three channels (normal, longitude, latitude), but had {displacements_local.shape[2]}"

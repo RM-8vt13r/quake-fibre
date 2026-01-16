@@ -39,7 +39,9 @@ class Fibre(ABC):
         - beat_length [float]:                  beat length in km
         - section_length [float]:               fibre section length in km (at least the correlation length Lc for the coarse-step model, << Lc for Marcuse's model)
         - path_coordinates [list]:              list of coordinates (longitude, latitude) along the fibre path.
-        - polarisation_mode_dispersion [float]: average accumulated differential group delay in ps/(km ^ 0.5).
+        - chromatic_dispersion [float]:         chromatic dispersion parameter in ps^2/km
+        - nonlinearity [float]:                 nonlinearity parameter in  1/(W km)
+        - polarisation_mode_dispersion [float]: average accumulated differential group delay in ps/(km ^ 0.5). If 0, turns off major axes rotations as well.
         - realisation_count [int]:              the number of fibre realisations with different distributed polarisation mode dispersion.
         - photoelasticity [float]:              the fibre photoelasticity.
         """
@@ -47,6 +49,8 @@ class Fibre(ABC):
         assert 'correlation_length'           in parameters['FIBRE'], f"'correlation_length' is missing from parameters section 'FIBRE'."
         assert 'beat_length'                  in parameters['FIBRE'], f"'beat_length' is missing from parameters section 'FIBRE'."
         assert 'section_length'               in parameters['FIBRE'], f"'section_length' is missing from parameters section 'FIBRE'."
+        assert 'chromatic_dispersion'         in parameters['FIBRE'], f"'chromatic_dispersion' is missing from parameters section 'FIBRE'"
+        assert 'nonlinearity'                 in parameters['FIBRE'], f"'nonlinearity' is missing from parameters section 'FIBRE'"
         assert 'polarisation_mode_dispersion' in parameters['FIBRE'], f"'polarisation_mode_dispersion' is missing from parameters section 'FIBRE'."
         assert 'realisation_count'            in parameters['FIBRE'], f"'realisation_count' is missing from parameters section 'FIBRE'."
         assert 'photoelasticity'              in parameters['FIBRE'], f"'photoelasticity' is missing from parameters section 'FIBRE'"
@@ -56,6 +60,8 @@ class Fibre(ABC):
         self._correlation_length           = parameters.getfloat('FIBRE', 'correlation_length')
         self._beat_length                  = parameters.getfloat('FIBRE', 'beat_length')
         self._section_length               = parameters.getfloat('FIBRE', 'section_length')
+        self._chromatic_dispersion         = parameters.getfloat('FIBRE', 'chromatic_dispersion')
+        self._nonlinearity                 = parameters.getfloat('FIBRE', 'nonlinearity')
         self._polarisation_mode_dispersion = parameters.getfloat('FIBRE', 'polarisation_mode_dispersion')
         self._realisation_count            = int(parameters.getfloat('FIBRE', 'realisation_count'))
         self._photoelasticity              = parameters.getfloat('FIBRE', 'photoelasticity')
@@ -116,13 +122,13 @@ class Fibre(ABC):
         Initialise birefringences with random moduli, e.g. using the random modulus model.
         """
 
-    def __call__(self, signal: Signal, transmission_start_times: (float, np.ndarray) = 0, perturbations: (Perturbation, list) = [], verbose: bool = False) -> Signal:
+    def __call__(self, signal: Signal, transmission_start_times: (float, np.ndarray) = 0, perturbations: (Perturbation, list) = []) -> Signal:
         """
         Make fibre instances callable; see propagate()
         """
-        return self.propagate(signal, transmission_start_times, perturbations, verbose)
+        return self.propagate(signal, transmission_start_times, perturbations)
 
-    def propagate(self, signal: Signal, transmission_start_times: (float, np.ndarray) = 0, perturbations: (Perturbation, list) = [], verbose: bool = False) -> Signal:
+    def propagate(self, signal: Signal, transmission_start_times: (float, np.ndarray) = 0, perturbations: (Perturbation, list) = []) -> Signal:
         """
         Propagate a polarisation-multiplexed phase-multiplexed signal through the fibre.
         Multiple fibre realisations are applied at once.
@@ -132,7 +138,6 @@ class Fibre(ABC):
         - signal [Signal]: the signal to propagate through the channel, shape [R,B,S,P] with number of realisations R or R = 1, batch size T, sample count S and principal polarisations P = 2.
         - transmission_start_times [float, np.ndarray]: timestamp(s) at which the signal transmission(s) begins in s, relative to the start time of a perturbation. If not a float, shape [T,].
         - perturbations [Perturbation, list]: Model these perturbations during signal transmission, in order of appearance. All birefringence scaling is applied before addition.
-        - verbose [bool]: whether to show a progress bar
 
         Outputs:
         - [Signal]: the output signal, shape [R,B,S,P] or [R,T,S,P]
@@ -143,16 +148,15 @@ class Fibre(ABC):
         if signal.device == Device.CUDA: signal.to_device(Device.CUDA) # Ensure that the signal resides in the currently active cupy GPU
         
         signal = self._propagate_master(
-                signal,
+                signal.copy(),
                 signal.frequency_angular,
                 transmission_start_times,
-                perturbations,
-                verbose
+                perturbations
             )
 
         return signal
 
-    def Jones(self, frequency_angular: (np.ndarray), carrier_wavelength: float = 1550., transmission_start_times: (float, np.ndarray) = 0, perturbations: (Perturbation, list) = [], verbose: bool = False) -> np.ndarray:
+    def Jones(self, frequency_angular: (np.ndarray), carrier_wavelength: float = 1550., transmission_start_times: (float, np.ndarray) = 0, perturbations: (Perturbation, list) = []) -> np.ndarray:
         """
         Calculate the fibre Jones matrix.
         The calculations will be done on the device (CPU or GPU) that frequency_angular resides in (see Signal.to_device())
@@ -163,7 +167,6 @@ class Fibre(ABC):
         - carrier_wavelength [float]: carrier wavelength in nm
         - transmission_start_times [float, np.ndarray]: timestamp(s) at which the signal transmission(s) begins in s, relative to the start time of a perturbation. If not a float, shape [T,].
         - perturbations [Perturbation, list]: Model these perturbations during signal transmission, in order of appearance. All birefringence scaling is applied before addition.
-        - verbose [bool]: whether to print progress bars and messages
 
         Outputs:
         - [np.ndarray, cp.ndarray]: the Jones matrices, shape [R,T,S,2,2]
@@ -175,6 +178,7 @@ class Fibre(ABC):
             xp = np
 
         assert len(frequency_angular.shape) == 1, f"frequency_angular must have shape [F,], but had shape {frequency_angular.shape}"
+        assert self.nonlinearity == 0, f"Jones matrices can only be calculated for fibres with a nonlinearity coefficient of 0."
         
         Jones_matrix_transposed = Signal(
                 samples = xp.eye(2, dtype = complex)[None, None, None],
@@ -188,13 +192,12 @@ class Fibre(ABC):
                 Jones_matrix_transposed,
                 frequency_angular,
                 transmission_start_times,
-                perturbations,
-                verbose
+                perturbations
             )
 
         return xp.moveaxis(Jones_matrix_transposed.samples, -1, -2)
 
-    def accumulate_differential_group_delays(self, device: Device = Device.CPU, verbose: bool = False) -> np.ndarray:
+    def accumulate_differential_group_delays(self, device: Device = Device.CPU) -> np.ndarray:
         """
         Accumulated differential group delay in ps, shape [R] where R is the number of fibre realisations
         """
@@ -206,7 +209,7 @@ class Fibre(ABC):
                 
         frequency_angular = xp.array([-xp.pi, xp.pi]) / (60 * self.section_path.lengths[0])
 
-        Jones_matrices = self.Jones(frequency_angular, verbose = verbose)[:, 0] # [R,F,2,2]
+        Jones_matrices = self.Jones(frequency_angular)[:, 0] # [R,F,2,2]
         Jones_matrices_derivative = xp.diff(Jones_matrices, axis = 1)[:, 0] / xp.diff(frequency_angular)[0]
 
         differential_group_delay = 2 * xp.sqrt(xp.linalg.det(Jones_matrices_derivative)) * 1e12 # Gordon et al. - PMD Fundamentals: Polarization Mode Dispersion in Optical Fibres
@@ -217,7 +220,7 @@ class Fibre(ABC):
         return differential_group_delay
 
     @abstractmethod
-    def _propagate_master(self, signal: Signal, frequency_angular: np.ndarray, transmission_start_times: (float, np.ndarray) = 0, perturbations: (Perturbation, list) = [], verbose: bool = False) -> Signal:
+    def _propagate_master(self, signal: Signal, frequency_angular: np.ndarray, transmission_start_times: (float, np.ndarray) = 0, perturbations: (Perturbation, list) = []) -> Signal:
         """
         Method called by propagate() and Jones() to simulate the fibre response.
 
@@ -226,7 +229,6 @@ class Fibre(ABC):
         - frequency_angular [np.ndarray, cp.ndarray]: frequencies of the signal or Jones matrix in rad/s, relative to the carrier frequency, shape [S,]
         - transmission_start_times [float, np.ndarray]: timestamp(s) at which the signal transmission(s) begins in s, relative to the start time of a perturbation. If not a float, shape [T,].
         - perturbations [Perturbation, list]: Model these perturbations during signal transmission, in order of appearance. All birefringence scaling is applied before addition.
-        - verbose [bool]: whether to print progress bars and messages
 
         Outputs:
         - [Signal]: the output signal or transposed Jones matrix, same shape as signal
@@ -258,6 +260,8 @@ class Fibre(ABC):
             'beat_length':                  self.beat_length,
             'section_path':                 self.section_path.to_dict(),
             'polarisation_mode_dispersion': self.polarisation_mode_dispersion,
+            'chromatic_dispersion':         self.chromatic_dispersion,
+            'nonlinearity':                 self.nonlinearity,
             'realisation_count':            self.realisation_count,
             'photoelasticity':              self.photoelasticity,
             'modulus_model':                self.modulus_model.name,
@@ -287,10 +291,12 @@ class Fibre(ABC):
         parameters.add_section('FIBRE')
         parameters.set('FIBRE', 'correlation_length',           str(fibre_dict['correlation_length']))
         parameters.set('FIBRE', 'beat_length',                  str(fibre_dict['beat_length']))
+        parameters.set('FIBRE', 'chromatic_dispersion',         str(fibre_dict['chromatic_dispersion']))
+        parameters.set('FIBRE', 'nonlinearity',                 str(fibre_dict['nonlinearity']))
         parameters.set('FIBRE', 'polarisation_mode_dispersion', str(fibre_dict['polarisation_mode_dispersion']))
         parameters.set('FIBRE', 'realisation_count',            str(fibre_dict['realisation_count']))
         parameters.set('FIBRE', 'photoelasticity',              str(fibre_dict['photoelasticity']))
-        parameters.set('FIBRE', 'modulus_model'),               fibre_dict['modulus_model']
+        parameters.set('FIBRE', 'modulus_model',                fibre_dict['modulus_model'])
 
         section_path = Path.from_dict(fibre_dict['section_path'])
         parameters.set('FIBRE', 'section_length', str(section_path.lengths[0]))
@@ -366,9 +372,31 @@ class Fibre(ABC):
         raise AttributeError("The beat length beat_length cannot be changed after instantiation of the Fibre")
 
     @property
+    def chromatic_dispersion(self) -> float:
+        """
+        [float] chromatic dispersion parameter of this Fibre in ps ^ 2 / km / rad
+        """
+        return float(self._chromatic_dispersion)
+
+    @chromatic_dispersion.setter
+    def chromatic_dispersion(self, value):
+        raise AttributeError("The chromatic dispersion parameter chromatic_dispersion cannot be changed after instantiation of the Fibre")
+
+    @property
+    def nonlinearity(self) -> float:
+        """
+        [float] nonlinearity parameter of this Fibre in rad / (W km)
+        """
+        return float(self._nonlinearity)
+
+    @nonlinearity.setter
+    def nonlinearity(self, value):
+        raise AttributeError("The nonlinearity parameter cannot be changed after instantiation of the Fibre")
+
+    @property
     def polarisation_mode_dispersion(self) -> float:
         """
-        [float] polarisation mode dispersion parameter of this Fibre in ps/(km ^ 0.5)
+        [float] polarisation mode dispersion parameter of this Fibre in ps / (km ^ 0.5)
         """
         return float(self._polarisation_mode_dispersion)
 
@@ -423,7 +451,7 @@ class Fibre(ABC):
     @property
     def differential_group_delays(self) -> np.ndarray:
         """
-        [float] the differential group delay per section and realisation in ps, shape [section_count, realisation_count]
+        [float] the differential group delay per section and realisation in ps. Shape [S, R] where S is the number of fibre sections and R the number of realisations.
         """
         return self._differential_group_delays
 

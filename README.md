@@ -76,7 +76,7 @@ To run scripts or unit tests from the corresponding directories in this project:
 5. To run scripts:  
    `jupyter notebook scripts`  
 6. To run unit tests:  
-   `pytest tests -s`  
+   `pytest -s --log-cli-level INFO`  
 
 
 ## Usage

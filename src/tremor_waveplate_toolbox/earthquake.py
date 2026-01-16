@@ -48,22 +48,21 @@ class Earthquake(PerturbationEvent):
             else:
                 raise e
 
-    def request_local_seismograms(self, path: Path, batch_size: int = None, verbose: bool = False):
+    def request_local_seismograms(self, path: Path, batch_size: int = None):
         """
         Request seismograms from Syngine at specified coordinates, on the local (longitude, latitude, normal) axes at each coordinate.
 
         Inputs:
         - path [Path]: coordinates, length C
         - batch_size [int]: how many seismograms to request simultaneously; defaults to C
-        - verbose: whether to print requesting progress
-
+        
         Outputs:
         - [Signal] signal containing all three displacement components in m, shape [C, T, D] where D indexes longitudinal, latitudinal, and normal components in that order
         """
         if batch_size is None: batch_size = path.vertex_count
         assert isinstance(batch_size, int), f"batch_size must be an int, but was a {type(batch_size)}"
 
-        if verbose: logger.info(f"Requesting seismograms from Syngine at {path.vertex_count} coordinates along the path. This may take a while..")
+        logger.info(f"Requesting seismograms from Syngine at {path.vertex_count} coordinates along the path. This may take a while..")
         try:
             batch_count = int(np.ceil(path.vertex_count / batch_size))
 
@@ -71,7 +70,7 @@ class Earthquake(PerturbationEvent):
             for batch_index in range(batch_count):
                 batch_start = batch_index * batch_size
                 batch_stop  = min(batch_start + batch_size, path.vertex_count)
-                if verbose and batch_size != path.vertex_count: logger.info(f"Requesting seismograms at coordinates {batch_start + 1}-{batch_stop} (batch {batch_index + 1} of {batch_count}).")
+                if batch_size != path.vertex_count: logger.info(f"Requesting seismograms at coordinates {batch_start + 1}-{batch_stop} (batch {batch_index + 1} of {batch_count}).")
                 syngine_stream += self._syngine_client.get_waveforms_bulk(
                     model = self.model,
                     bulk = [{
@@ -89,7 +88,7 @@ class Earthquake(PerturbationEvent):
         except ConnectionError as e:
             raise ConnectionError("Syngine could not be reached; please check your internet connection")
         
-        if verbose: logger.info("Syngine request complete. Collecting and validating results..")
+        logger.info("Syngine request complete. Collecting and validating results..")
 
         times = syngine_stream[0].times()
         sample_time = times[1] - times[0]
@@ -111,7 +110,7 @@ class Earthquake(PerturbationEvent):
             assert syngine_stream[3 * receiver_index].times().shape == times.shape and np.all(syngine_stream[3 * receiver_index].times() == times), f"Receiver {receiver_index + 1} normal trace times must be the same as receiver 1 normal trace times, but weren't"
             displacements_normal[receiver_index, :] = syngine_stream[3 * receiver_index].data
 
-        if verbose: logger.info("Results validated and returned!")
+        logger.info("Results validated and returned!")
 
         return Signal(
             samples = np.stack([
@@ -122,20 +121,19 @@ class Earthquake(PerturbationEvent):
             sample_rate = 1 / sample_time
         )
 
-    def request_global_seismograms(self, path: Path, batch_size: int = None, verbose: bool = False):
+    def request_global_seismograms(self, path: Path, batch_size: int = None):
         """
         Request seismograms from Syngine at specified coordinates, and transform them from the local axes at each coordinate to a shared global axes system.
 
         Inputs:
         - path [Path]: coordinates, length C
         - batch_size [int]: how many seismograms to request simultaneously; defaults to C
-        - verbose: whether to print requesting progress
 
         Outputs:
         - [Signal] signal containing all three displacement components in m, relative to local coordinates, shape [C, T, D] with time T, and where D = 3 indexes longitudinal, latitudinal, and normal components in that order
         - [Signal] signal containing all three displacement components in m, relative to global coordinates, shape [C, T, D] where D = 3 indexes global x, y, and z components in that order
         """
-        displacements_local = self.request_local_seismograms(path, batch_size, verbose)
+        displacements_local = self.request_local_seismograms(path, batch_size)
 
         sin_long = np.sin(path.longitudes)
         sin_lat  = np.sin(path.latitudes)
@@ -156,21 +154,20 @@ class Earthquake(PerturbationEvent):
 
         return displacements_local, displacements_global
 
-    def request_projected_seismograms(self, path: Path, batch_size: int = None, verbose: bool = False):
+    def request_projected_seismograms(self, path: Path, batch_size: int = None):
         """
         Interpreting longitudes and latitudes as chronological path coordinates, project seismograms at each coordinate onto the neighbouring straight segments of this path.
  
         Inputs:
         - path [Path]: coordinates, length C
         - batch_size [int]: how many seismograms to request simultaneously; defaults to C
-        - verbose: whether to print requesting progress
 
         Outputs:
         - [Signal] signal containing all three displacement components in m, relative to local coordinates, shape [C, T, D] with time T, and where D = 3 indexes longitudinal, latitudinal, and normal components in that order
         - [Signal] signal containing all three displacement components in m, relative to global coordinates, shape [C, T, D] where D = 3 indexes global x, y, and z components in that order
-        - [Signal] signal containing displacement in m projected onto the path, shape [C-1, T, E] where E = 2 distinguighes between section beginnings and ends
+        - [Signal] signal containing displacement in m projected onto the path, shape [C-1, T, E] where E = 2 distinguishes between section beginnings and ends
         """
-        displacements_local, displacements_global = self.request_global_seismograms(path, batch_size, verbose)
+        displacements_local, displacements_global = self.request_global_seismograms(path, batch_size)
 
         path_coordinates_global = earth_radius * np.array([
             np.cos(path.latitudes) * np.cos(path.longitudes),
@@ -193,14 +190,13 @@ class Earthquake(PerturbationEvent):
 
         return displacements_local, displacements_global, displacements_projected
 
-    def request_projected_strains(self, path: Path, batch_size: int = None, verbose: bool = False):
+    def request_projected_strains(self, path: Path, batch_size: int = None):
         """
         Interpreting longitudes and latitudes as chronological path coordinates, request the longitudinal material strain on each path section by differentiating the projected seismograms in space.
 
         Inputs:
         - path [Path]: coordinates, length C
         - batch_size [int]: how many seismograms to request simultaneously; defaults to C
-        - verbose: whether to print requesting progress
 
         Outputs:
         - [Signal] signal containing all three displacement components in m, relative to local coordinates, shape [C, T, D] with time T, and where D = 3 indexes longitudinal, latitudinal, and normal components in that order
@@ -208,7 +204,7 @@ class Earthquake(PerturbationEvent):
         - [Signal] signal containing displacement in m projected onto the path, shape [C-1, T, E] where E = 2 distinguighes between section beginnings and ends
         - [Signal] signal containing strain projected onto the path, shape [C-1, T, 1]
         """
-        displacements_local, displacements_global, displacements_projected = self.request_projected_seismograms(path, batch_size, verbose)
+        displacements_local, displacements_global, displacements_projected = self.request_projected_seismograms(path, batch_size)
 
         strains_projected = Signal(
             samples = np.diff(displacements_projected.samples_time, axis = 2) / path.lengths[:, None, None],
@@ -218,15 +214,13 @@ class Earthquake(PerturbationEvent):
         return displacements_local, displacements_global, displacements_projected, strains_projected
 
     @override
-    def get_perturbation(self, path: Path, batch_size: int = None, verbose: bool = False) -> Perturbation:
+    def get_perturbation(self, path: Path, batch_size: int = None) -> Perturbation:
         """
         Create a perturbation from this earthquake. See Earthquake.request_projected_strains() and PerturbationEvent.get_perturbation() for documentation details.
         """
-        _, _, _, strains_projected = self.request_projected_strains(path, batch_size, verbose)
+        _, _, _, strains_projected = self.request_projected_strains(path, batch_size)
         perturbation = Perturbation(
-                birefringence_scalars = 1. + strains_projected.samples_time[:, :, 0],
-                birefringence_adders = None,
-                major_angles_adders = None,
+                material_strains = strains_projected.samples_time[:, :, 0],
                 sample_rate = strains_projected.sample_rate,
                 domain = strains_projected.domain
             )

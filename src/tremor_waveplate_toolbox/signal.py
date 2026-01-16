@@ -263,7 +263,7 @@ class Signal:
     @property
     def samples_time(self) -> np.ndarray:
         """
-        [np.ndarray, cp.ndarray] The signal samples in the time domain, shape [...,S,P]
+        [np.ndarray, cp.ndarray] The signal samples in the time domain, shape [...,S,*C]
         """
         self.to_domain(Domain.TIME)
         return self.samples
@@ -276,7 +276,7 @@ class Signal:
     @property
     def samples_frequency(self) -> np.ndarray:
         """
-        [np.ndarray, cp.ndarray] The signal samples in the frequency domain, shape [...,S,P]
+        [np.ndarray, cp.ndarray] The signal samples in the frequency domain, shape [...,S,*C]
         """
         self.to_domain(Domain.FREQUENCY)
         return self.samples
