@@ -11,7 +11,7 @@ from .fibre import Fibre
 from .path import Path
 from .perturbation_event import PerturbationEvent
 from .perturbation import Perturbation
-from .pulse import Pulse, Sinc, SINC, RootRaisedCosine, RRCOS
+from .pulse import Pulse, Sinc, SINC, RootRaisedCosine, RRCOS, Square, SQUARE
 from .receiver import Receiver
 from .scramblers import Scramblers
 from .signal import Signal

@@ -25,7 +25,10 @@ class Receiver:
         - filter_parameter [object]: any parameter(s) to define the filter, such as rolloff factor
         - upsample_factor [int]: samples per symbol
         """
-        self.filter            = [parameters.get('TRANSCEIVER', 'filter'), (parameters.getfloat('TRANSCEIVER', 'baud_rate'), parameters.getfloat('TRANSCEIVER', 'filter_parameter'))]
+        filter_list = [parameters.get('TRANSCEIVER', 'filter'), parameters.getfloat('TRANSCEIVER', 'baud_rate')]
+        if parameters.has_option('TRANSCEIVER', 'filter_parameter'): filter_list = filter_list + [parameters.getfloat('TRANSCEIVER', 'filter_parameter')]
+        self.filter = filter_list
+
         self.power_dBm         = parameters.getfloat('TRANSCEIVER', 'power')
         self.downsample_factor = int(parameters.getfloat('TRANSCEIVER', 'upsample_factor'))
 
@@ -50,7 +53,7 @@ class Receiver:
 
         # Downsample to symbol space
         symbols = Signal(
-            samples = samples.samples_time[..., ::self.downsample_factor, :],
+            samples = samples.samples_time[..., ::self.downsample_factor, :].copy(),
             sample_rate = self.filter.symbol_rate
         )
 
@@ -69,7 +72,7 @@ class Receiver:
     @filter.setter
     def filter(self, value):
         if isinstance(value, pulse.Pulse): self._filter = value
-        elif isinstance(value, (list, tuple)): self._filter = getattr(pulse, value[0].upper())(*value[1])
+        elif isinstance(value, (list, tuple)): self._filter = getattr(pulse, value[0].upper())(*value[1:])
         else: raise ValueError(f"Receiver filter must be a Pulse or str, but had type {type(value)}")
 
     @property
@@ -104,6 +107,6 @@ class Receiver:
 
     @downsample_factor.setter
     def downsample_factor(self, value):
-        assert isinstance(value, int), f"downsample_factor must be an integer, but had type {type(value)}"
+        assert isinstance(value, (int, np.integer)), f"downsample_factor must be an integer, but had type {type(value)}"
         assert value > 0, f"downsample_factor must be positive (>0), but was {value}"
         self._downsample_factor = value

@@ -23,7 +23,7 @@ def rotation_matrix(angle: (float, np.ndarray)) -> np.ndarray:
     Outputs:
     - np.ndarray: dtype float, matrix or matrices, shape [..., 2, 2] if angle is a np.ndarray, and [2, 2] if it's a float
     """
-    xp = np if isinstance(angle, (np.ndarray, int, float)) else cp
+    xp = np if isinstance(angle, (np.ndarray, int, np.integer, float, np.floating)) else cp
 
     angle = xp.array(angle)
     assert angle.dtype in (int, float), f"Angle must have type float, but had type {angle.dtype}"
@@ -41,7 +41,7 @@ def phase_matrix(phase: (float, np.ndarray)) -> np.ndarray:
     Outputs:
     - np.ndarray: dtype float, matrix or matrices, shape [..., 2, 2] if phase is a np.ndarray, and [2, 2] if it's a float
     """
-    xp = np if isinstance(phase, (np.ndarray, int, float)) else cp
+    xp = np if isinstance(phase, (np.ndarray, int, np.integer, float, np.floating)) else cp
 
     phase = xp.array(phase)
     assert phase.dtype in (int, float), f"Phase must have type float, but had type {phase.dtype}"

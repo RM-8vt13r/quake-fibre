@@ -140,7 +140,7 @@ class Pulse(ABC):
 
     @symbol_rate.setter
     def symbol_rate(self, value):
-        assert isinstance(value, (float, int)), f"symbol_rate must have type float, but was {type(value)}"
+        assert isinstance(value, (int, np.integer, float, np.floating)), f"symbol_rate must have type float, but was {type(value)}"
         assert value > 0, f"symbol_rate must be positive, but was {value}"
         self._symbol_rate = float(value)
 
@@ -165,7 +165,6 @@ class Sinc(Pulse):
 
         Inputs:
         - symbol_rate [float]: the symbol rate in Hz
-        - rolloff [float]: the rolloff factor
         """
         super().__init__(symbol_rate, Domain.FREQUENCY)
 
@@ -218,10 +217,33 @@ class RootRaisedCosine(Pulse):
 
     @rolloff.setter
     def rolloff(self, value: float):
-        assert isinstance(value, (float, int)), f"rolloff must have type float, but was {type(value)}"
+        assert isinstance(value, (int, np.integer, float, np.floating)), f"rolloff must have type float, but was {type(value)}"
         assert value >= 0, f"rolloff must be nonnegative, but was {value}"
         assert value <= 1, f"rolloff must be <= 1, but was {value}"
         self._rolloff = float(value)
 
-SINC = Sinc
-RRCOS = RootRaisedCosine
+class Square(Pulse):
+    """
+    A square pulse
+    """
+    def __init__(self, symbol_rate: float):
+        """
+        Initialise the square pulse.
+
+        Inputs:
+        - symbol_rate [float]: the symbol rate in Hz
+        """
+        super().__init__(symbol_rate, Domain.TIME)
+
+    @override
+    def pulse_time(self, time: np.ndarray) -> np.ndarray:
+        return np.where(np.abs(time) <= self.symbol_time / 2, 1 / np.sqrt(self.symbol_time), 0.)
+
+    @override
+    def pulse_frequency(self, frequency: np.ndarray) -> np.ndarray:
+        return np.sinc(frequency / self.symbol_rate) / np.sqrt(self.symbol_rate)
+
+
+SINC   = Sinc
+RRCOS  = RootRaisedCosine
+SQUARE = Square

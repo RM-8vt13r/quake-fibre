@@ -2,6 +2,7 @@
 A structure representing a signal.
 """
 import sys
+import logging
 
 import numpy as np
 try:
@@ -10,6 +11,8 @@ except:
     pass
 
 from .constants import Domain, Device
+
+logger = logging.getLogger()
 
 class Signal:
     """
@@ -33,7 +36,6 @@ class Signal:
         - carrier_wavelength [float]: carrier wavelength in nm; inf if the signal is not modulated.
         """
         assert isinstance(domain, Domain), f"domain must be a Domain, but was a {type(domain)}"
-        # assert isinstance(device, Device), f"device must be a Device, but was a {type(device)}"
         self._domain = domain
         self._device = Device.CPU if isinstance(samples, np.ndarray) else Device.CUDA
         self.samples = samples
@@ -46,11 +48,11 @@ class Signal:
         [Signal] return a copy of this signal
         """
         return Signal(
-            self.samples.copy(),
-            self.sample_rate,
-            self.sample_axis,
-            self.domain,
-            self.carrier_wavelength
+            samples     = self.samples.copy(),
+            sample_rate = self.sample_rate,
+            sample_axis = self.sample_axis,
+            domain      = self.domain,
+            carrier_wavelength = self.carrier_wavelength
         )
 
     def to_domain(self, domain: Domain):
@@ -59,11 +61,15 @@ class Signal:
         """
         if domain == self.domain: return
 
+
+        if self.samples.dtype != complex:
+            logger.warning("(Inverse) Fourier transform cast real-valued Signal to complex")
+
         match domain:
             case Domain.TIME:
-                self.samples = self.xp.fft.ifft(self.samples.copy(), axis = self.sample_axis, norm = 'ortho')
+                self.samples = self.xp.fft.ifft(self.samples, axis = self.sample_axis, norm = 'ortho')
             case Domain.FREQUENCY:
-                self.samples = self.xp.fft.fft(self.samples.copy(), axis = self.sample_axis, norm = 'ortho')
+                self.samples = self.xp.fft.fft(self.samples, axis = self.sample_axis, norm = 'ortho')
 
         self._domain = domain
 
@@ -110,15 +116,22 @@ class Signal:
         """
         match device:
             case Device.CPU:
-                if self.device == Device.CPU: return
+                if self.device == Device.CPU:
+                    logger.warning("Attempted to move signal into CPU memory, but it already resided there.")
+                    return
+                    
                 self._device = device
                 self.samples = np.array(self.samples.get())
 
             case Device.CUDA:
-                assert 'cupy' in sys.modules, f"Cannot move signal onto GPU without CUDA-enabled installation (see installation instructions)"
+                # assert 'cupy' in sys.modules, f"Cannot move signal onto GPU without CUDA-enabled installation (see installation instructions)"
+                if 'cupy' not in sys.modules:
+                    logger.warning("Cannot move signal onto GPU without CUDA-enabled installation (see installation instructions). Keeping signal in CPU memory..")
+                    return
+                    
                 self._device = device
                 self.samples = cp.array(self.samples)
-            
+                    
             case _:
                 raise ValueError(f"device must be Device.CPU or Device.CUDA, but was {device}")
     
@@ -156,11 +169,17 @@ class Signal:
 
     @samples.setter
     def samples(self, value):
+        """
+        Set the samples of the signal in its current domain, shape [..., S, *C] where ... can be anything, S is the number of samples on axis self.sample_axis, and *C is any number of channels.
+        Note: value is not copied for the signal! Rather, a pointer is stored.
+        """
         assert isinstance(value, (np.ndarray)) or ('cupy' in sys.modules and isinstance(value, cp.ndarray)), f"New samples must have type np.ndarray or cp.ndarray (if cupy is available), but had {type(value)}"
         assert len(value.shape) >= 1, f"New samples must have at least one dimension ..., S and *C, but had only {len(value.shape)}"
-        assert value.dtype in (complex, float, int), f"New samples must have datatype complex, but were {value.dtype}"
+        assert value.dtype in (complex, float, int), f"New samples must have datatype complex or float, but were {value.dtype}"
+        if hasattr(self, '_samples') and value.dtype != self.samples.dtype:
+            logger.warning(f"Setting samples changed {self.samples.dtype} Signal to {value.dtype}")
         # assert '_samples' not in self.__dir__() or self.shape[:-2] + self.shape[-1:] == value.shape[:-2] + value.shape[-1:], f"All new samples dimensions must match the previous samples except dimension -2, but their dimensions were {self.shape} and {value.shape}"
-        self._samples = self.xp.array(value.copy()).astype(complex)
+        self._samples = self.xp.array(value)
 
     @property
     def sample_axis(self):
@@ -171,7 +190,7 @@ class Signal:
 
     @sample_axis.setter
     def sample_axis(self, value):
-        assert isinstance(value, int), f"sample_axis must be an int, but was a {type(value)}"
+        assert isinstance(value, (int, np.integer)), f"sample_axis must be an int, but was a {type(value)}"
         assert value >= -len(self.shape), f"sample_axis must be at least -the number of sample dimensions (>= {-len(self.shape)}), but was {value}"
         assert value < len(self.shape), f"sample_axis must be less than the number of sample dimensions (< {len(self.shape)}), but was {value}"
         self._sample_axis = value
@@ -231,7 +250,7 @@ class Signal:
 
     @carrier_wavelength.setter
     def carrier_wavelength(self, value):
-        assert isinstance(value, (int, float)), f"New carrier_wavelength must be a float, but was {type(value)}."
+        assert isinstance(value, (int, np.integer, float, np.floating)), f"New carrier_wavelength must be a float, but was {type(value)}."
         assert value > 0, f"New carrier_wavelength must be larger than 0, but was {value}."
         self._carrier_wavelength = value
 
@@ -244,7 +263,7 @@ class Signal:
 
     @carrier_frequency.setter
     def carrier_frequency(self, value):
-        assert isinstance(value, (int, float)), f"New carrier_frequency must be a float, but was {type(value)}."
+        assert isinstance(value, (int, np.integer, float, np.floating)), f"New carrier_frequency must be a float, but was {type(value)}."
         assert value >= 0, f"New carrier_frequency must be at least 0, but was {value}."
         assert value < np.inf, f"New carrier_frequency may not be infinity"
         self._carrier_wavelength = sp.constants.speed_of_light / value * 1e9
@@ -295,7 +314,7 @@ class Signal:
 
     @sample_rate.setter
     def sample_rate(self, value):
-        assert isinstance(value, (float, int)), f"New sample rate must have type float, but was {type(value)}"
+        assert isinstance(value, (int, np.integer, float, np.floating)), f"New sample rate must have type float, but was {type(value)}"
         assert value > 0, f"New sample rate must be larger than 0, but was {value}"
         self._sample_rate = float(value)
 

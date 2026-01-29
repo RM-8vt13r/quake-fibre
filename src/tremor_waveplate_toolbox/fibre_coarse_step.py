@@ -30,7 +30,7 @@ class FibreCoarseStep(Fibre):
         Initialise fixed differential group delays for the coarse-step method.
         """
         self.differential_group_delays = np.tile(
-            self.polarisation_mode_dispersion * np.sqrt(3 * np.pi * self.section_path.lengths / 8)[:, None], # Czegledi et al. (2016): Polarization-Mode Dispersion Aware Digital Backpropagation, Prola et al. (1997): PMD Emulators and Signal Distortion in 2.48-Gb/s IM-DD Lightwave Systems
+            self.polarisation_mode_dispersion * np.sqrt(3 * np.pi * self.step_path.lengths / 8)[:, None], # Czegledi et al. (2016): Polarization-Mode Dispersion Aware Digital Backpropagation, Prola et al. (1997): PMD Emulators and Signal Distortion in 2.48-Gb/s IM-DD Lightwave Systems
             (1, self.realisation_count)
         )
         self._init_scramblers()
@@ -53,7 +53,7 @@ class FibreCoarseStep(Fibre):
         Initialise random scramblers between fibre sections that perform a frequency-invariant scrambling of the state of polarisation.
         """
         random_vectors = np.random.default_rng().normal(
-           size = (self.section_path.edge_count, self.realisation_count, 4)
+           size = (self.step_path.edge_count, self.realisation_count, 4)
         ) # Initialise [cos(theta), a * sin(theta)], Czegledi et al. (2016): Polarization Drift Channel Model for Coherent Fibre-Optic Systems
         random_vectors /= np.linalg.norm(random_vectors, axis = -1)[..., None]
 
@@ -62,33 +62,43 @@ class FibreCoarseStep(Fibre):
         self.scramblers   = sp.linalg.expm(-1j * rotation_angles[:, :, None, None] * np.einsum('sra,apq->srpq', rotation_axes, PAULI_VECTOR))
 
     @override
-    def _propagate_master(self, signal: Signal, frequency_angular: np.ndarray, transmission_start_times: (float, np.ndarray) = 0, perturbations: (Perturbation, list) = []) -> Signal:
+    def _propagate_master(self, signal: Signal, frequency_angular: np.ndarray, transmission_start_times: (float, np.ndarray) = 0, perturbations: (Perturbation, list) = [], step_start: int = None, step_stop: int = None) -> Signal:
         """
         Master function both for propagating a signal or building a Jones transfer matrix
         """
-        if perturbations is None: perturbations = ()
+        super()._propagate_master(signal, frequency_angular, transmission_start_times, perturbations, step_start, step_stop)
+
         assert len(perturbations) == 0, f"Perturbations not yet implemented in the coarse-step fibre model"
         assert self.chromatic_dispersion == 0, f"Chromatic dispersion not yet implemented in the coarse-step fibre model"
         assert self.nonlinearity == 0, f"Nonlinearity not yet implemented in the coarse-step fibre model"
+        assert np.isinf(self.attenuation), f"Attenuation not yet implemented in the coarse-step fibre model"
 
-        if not isinstance(transmission_start_times, (float, int)):
+        if not isinstance(transmission_start_times, (int, np.integer, float, np.floating)):
             transmission_start_times = signal.xp.array(transmission_start_times)
             assert len(transmission_start_times.shape) == 1, f"transmission_start_times must have shape [T,], but had shape {transmission_start_times.shape}"
             assert signal.shape[signal.sample_axis - 1] == 1, f"If transmission_start_times has shape [T,] signal must have batch size 1, but this was {signal.shape[signal.sample_axis - 1]}"
         else:
             transmission_start_times = signal.xp.array([transmission_start_times])
 
-        differential_group_delays = signal.xp.array(self.differential_group_delays[:, :, *(None,) * -signal.sample_axis_negative]) # [S, R, 1, 1]/[S, R, 1, 1, 1]
-        scramblers = signal.xp.array(self.scramblers[:, :, *(None,) * -(1 + signal.sample_axis_negative)]) # [S, R, 1, 2, 2]/[S, R, 1, 1, 2, 2]
+        differential_group_delays = signal.xp.array(self.differential_group_delays[step_start:step_stop, :, *(None,) * -signal.sample_axis_negative]) # [S, R, 1, 1]/[S, R, 1, 1, 1]
+        scramblers = signal.xp.array(self.scramblers[step_start:step_stop, :, *(None,) * -(1 + signal.sample_axis_negative)]) # [S, R, 1, 2, 2]/[S, R, 1, 1, 2, 2]
 
         frequency_angular = frequency_angular[*(None,) * 2, :, *(None,) * -(2 + signal.sample_axis_negative)] # [1, 1, F]/[1, 1, F, 1]
 
         iterable = zip(differential_group_delays, scramblers)
-        if logger.isEnabledFor(logging.DEBUG):
+
+        desc_string = "Propagating signal through fibre " if signal.sample_axis_negative == -2 else "Building Jones matrix "
+        if step_start is not None: desc_string += f"from step {step_start + 1} "
+        if step_stop is not None: desc_string += f"until step {step_stop} "
+        desc_string += "("
+        desc_string += "CPU" if signal.device == Device.CPU else "CUDA"
+        if len(perturbations): desc_string += ", perturbed"
+        desc_string += ")"
+        if logger.isEnabledFor(logging.INFO):
             iterable = tqdm(
                 iterable,
-                total = self.section_path.edge_count,
-                desc = f"{"Propagating signal through fibre" if signal.sample_axis_negative == -2 else "Building Jones matrix"} ({'CPU' if signal.device == Device.CPU else 'CUDA'}{', perturbed' if len(perturbations) > 0 else ''})"
+                total = (self.step_path.edge_count if step_stop is None else step_stop) - (0 if step_start is None else step_start),
+                desc = desc_string
             )
 
         for differential_group_delay, scrambler in iterable: # [R, 1, 1], [R, 1]
@@ -136,6 +146,6 @@ class FibreCoarseStep(Fibre):
     def scramblers(self, value) -> None:
         assert isinstance(value, np.ndarray), f"New scramblers value must be type np.ndarray, but was a {type(value)}"
         assert value.dtype in (float, int, complex), f"New scramblers array must contain values of type complex, but contained {value.dtype}"
-        assert value.shape == (self.section_path.edge_count, self.realisation_count, 2, 2), f"New scramblers array must have shape (self.section_path.edge_count ({self.section_path.edge_count}), self.realisation_count ({self.realisation_count}), 2, 2), but had shape {value.shape}"
+        assert value.shape == (self.step_path.edge_count, self.realisation_count, 2, 2), f"New scramblers array must have shape (self.step_path.edge_count ({self.step_path.edge_count}), self.realisation_count ({self.realisation_count}), 2, 2), but had shape {value.shape}"
         assert np.allclose(value[..., 0, 0], value[..., 1, 1].conjugate()) and np.allclose(value[..., 1, 0], -value[..., 0, 1].conjugate()), f"New scramblers array must contain unitary matrices, but didn't"
         self._scramblers = value.copy().astype(complex)

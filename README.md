@@ -21,7 +21,7 @@ To use this project:
 4. (Recommended) create a new virtual environment:  
    - [venv](https://docs.python.org/3/library/venv.html):  
      `python -m venv env`,  
-     `python3 -m venv env`, or  
+     `python3 -m venv env`,  
      `py -3 -m venv env`  
      (depending on your OS and Python installation).  
    - [Anaconda](https://www.anaconda.com/download):  
@@ -76,8 +76,7 @@ To run scripts or unit tests from the corresponding directories in this project:
 5. To run scripts:  
    `jupyter notebook scripts`  
 6. To run unit tests:  
-   `pytest -s --log-cli-level INFO`  
-
+   `pytest`  
 
 ## Usage
 Take a look at the notebooks in the 'scripts' folder for specific demonstrations.  

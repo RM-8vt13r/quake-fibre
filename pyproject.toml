@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "tremor-waveplate-toolbox"
-version = "2026.01.16"
+version = "2026.01.29"
 description = "Dual-polarisation transmission through an optical fibre undergoing earthquake perturbations."
 readme = {file = "README.md", content-type = "text/markdown"}
 
@@ -42,7 +42,7 @@ classifiers = [
 license = "MIT"
 license-files = ["LICENSE"]
 
-requires-python = ">= 3.12"
+requires-python = ">= 3.11"
 dependencies = [
     "numpy",
     "scipy",
@@ -72,5 +72,6 @@ testing = [
     "matplotlib",
     "cartopy",
     "notebook",
-    "tqdm"
+    "tqdm",
+    "h5py"
 ]

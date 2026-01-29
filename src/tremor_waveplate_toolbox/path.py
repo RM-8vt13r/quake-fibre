@@ -3,6 +3,7 @@ A class representing a path over the earth's surface
 """
 import numpy as np
 import obspy as op
+
 class Path:
     def __init__(self, longitudes: np.ndarray = None, latitudes: np.ndarray = None, lengths: np.ndarray = None):
         """
@@ -11,7 +12,7 @@ class Path:
         Inputs:
         - [np.ndarray] longitudes: list of coordinate longitudes in degrees, shape [C,]; if None, lengths must be set
         - [np.ndarray] latitudes: list of coordinate latitudes in degrees, shape [C,]; if None, lengths must be set
-        - [np.ndarray] lengths: list of edge lengths in km, shape [C,]; if lengths is specified (not None), longitudes and latitudes will be ignored, and coordinate-related Path properties will be unavailable
+        - [np.ndarray] lengths: list of edge lengths in km, shape [C-1,]; if lengths is specified (not None), longitudes and latitudes will be ignored, and coordinate-related Path properties will be unavailable
         """
         if lengths is None:
             longitudes = np.array(longitudes)
@@ -33,6 +34,45 @@ class Path:
 
             self._longitudes = None
             self._latitudes = None
+
+    def interpolated(self, positions: (np.ndarray, float)):
+        """
+        Create a new path from this one by linear spline interpolation.
+
+        Inputs:
+        - positions [np.ndarray, float]: if np.ndarray, the positions along the fibre in km where to place vertices on the interpolated path. If float, the distance between vertices on the interpolated path.
+
+        Outputs:
+        - [Path]: the interpolated path.
+        """
+        assert isinstance(positions, (int, np.integer, float, np.floating, np.ndarray, list, tuple)), f"positions must be np.ndarray or float, but was {type(positions)}"
+
+        if isinstance(positions, (int, np.integer, float, np.floating)):
+            positions = np.arange(0, self.length, positions)
+            positions = np.append(positions, self.length)
+
+        if self.longitudes is None:
+            logger.warning("Interpolating a Path without coordinates")
+            return Path(lengths = np.diff(positions))
+
+        longitudes = np.interp(positions, self.positions, self.longitudes)
+        latitudes  = np.interp(positions, self.positions, self.latitudes)
+        return Path(longitudes, latitudes)
+
+    def copy(self):
+        """
+        Copy this path.
+
+        Outputs:
+        - [Path] the copied path
+        """
+        if self.longitudes is None or self.latitudes is None:
+            return Path(lengths = self.lengths.copy())
+
+        return Path(
+            self.longitudes.copy(),
+            self.latitudes.copy()
+        )
 
     def to_dict(self):
         """
@@ -99,13 +139,19 @@ class Path:
         Output:
         - [Path] The sliced path
         """
-        if isinstance(index, int):
+        if isinstance(index, (int, np.integer)):
             index = slice(index, index + 1, 1)
 
-        return Path(
-            self.longitudes[index],
-            self.latitudes[index]
-        )
+        if self._longitudes is not None:
+            return Path(
+                    self.longitudes[index],
+                    self.latitudes[index]
+                )
+
+        else:
+            return Path(
+                    lengths = self.lengths[index]
+                )
 
     def __len__(self):
         """

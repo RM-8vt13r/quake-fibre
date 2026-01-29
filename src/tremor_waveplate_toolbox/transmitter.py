@@ -3,6 +3,7 @@ A class to transmit optical signals
 """
 
 from configparser import ConfigParser
+import json
 
 import numpy as np
 
@@ -20,15 +21,22 @@ class Transmitter:
         Create a new Transmitter.
 
         Required entries in parameters['TRANSCEIVER']:
-        - constellation [str, list]: 'BPSK', 'PSK8', 'QPSK', 'QAM4', 'QAM16', 'QAM64', or a list of complex symbols
+        - constellation [str]: 'BPSK', 'PSK8', 'QPSK', 'QAM4', 'QAM16', 'QAM64', or a string with a list of complex symbols
         - power [float]: Transmission power in dBm
         - baud_rate [float]: symbol rate in Hz
         - pulse [str]: 'SINC' or 'RRCOS' for sinc or root-raised cosine pulses
         - pulse_parameter [object]: any parameter(s) to define the pulse, such as rolloff factor
         - upsample_factor [int]: samples per symbol
         """
-        self.constellation   = parameters.get('TRANSCEIVER', 'constellation')
-        self.pulse           = [parameters.get('TRANSCEIVER', 'pulse'), (parameters.getfloat('TRANSCEIVER', 'baud_rate'), parameters.getfloat('TRANSCEIVER', 'pulse_parameter'))]
+        try:
+            self.constellation = json.loads(parameters.get('TRANSCEIVER', 'constellation'))
+        except:
+            self.constellation = parameters.get('TRANSCEIVER', 'constellation')
+
+        pulse_list = [parameters.get('TRANSCEIVER', 'pulse'), parameters.getfloat('TRANSCEIVER', 'baud_rate')]
+        if parameters.has_option('TRANSCEIVER', 'pulse_parameter'): pulse_list = pulse_list + [parameters.getfloat('TRANSCEIVER', 'pulse_parameter')]
+        self.pulse = pulse_list
+
         self.power_dBm       = parameters.getfloat('TRANSCEIVER', 'power')
         self.upsample_factor = int(parameters.getfloat('TRANSCEIVER', 'upsample_factor'))
 
@@ -53,7 +61,7 @@ class Transmitter:
         assert len(symbols.shape) == 3 and symbols.shape[-1] == 2, f"symbols should have shape [B,S,P] with P = 2, but had shape {symbols.shape}"
 
         symbols = Signal(
-            samples = symbols[None],
+            samples = symbols[None].copy(),
             sample_rate = self.pulse.symbol_rate
         )
 
@@ -72,6 +80,39 @@ class Transmitter:
         samples = self.pulse(samples)
 
         return symbols, samples
+
+    def transmit_continuous(self, symbol: np.ndarray, symbol_count: int, carrier_wavelength: float = 1550.) -> Signal:
+        """
+        Create a continuous-wave Signal by repeating the same sample over and over
+
+        Inputs:
+        - symbol [np.ndarray]: the symbol to repeat, shape [P] where P = 2 indexes two orthogonal polarisations.
+        - symbol_count [int]: the number of (identicals) symbols to transmit. Each symbol is upsampled to self.upsample_factor identical samples
+        - carrrier_wavelength [int]: the signal carrier wavelength in nm
+
+        Outputs:
+        - [Signal]: the output signal, shape [R,B,S,P] where R = 1 is fibre realisations, B = 1 is batches and S = sample_count
+        """
+        assert isinstance(symbol, (tuple, list, np.ndarray)), f"symbol must be a np.ndarray, but was a {type(symbol)}"
+        symbol = np.array(symbol, dtype = complex)
+        assert len(symbol.shape) == 1 and symbol.shape[0] == 2, f"symbol must have shape [2,], but had shape {symbol.shape}"
+        assert isinstance(symbol_count, (int, np.integer)), f"symbol_count must be an int, but was a {type(symbol_count)}"
+        assert symbol_count > 0, f"symbol_count must be > 0, but was {symbol_count}"
+
+        # Normalise symbol to unit energy
+        symbol /= np.sqrt(np.linalg.norm(symbol))
+
+        # Generate continuous-wave signal
+        signal = Signal(
+            samples = np.full(shape = (1, 1, symbol_count * self.upsample_factor, 2), fill_value = symbol, dtype = complex),
+            sample_rate = self.pulse.symbol_rate * self.upsample_factor,
+            carrier_wavelength = carrier_wavelength
+        )
+
+        # Scale to transmission power
+        signal.samples_time *= np.sqrt(self.power_W)
+
+        return signal
 
     def transmit_random(self, batch_size: int, symbol_count: int, carrier_wavelength: float = 1550.) -> Signal:
         """
@@ -114,7 +155,7 @@ class Transmitter:
     @pulse.setter
     def pulse(self, value):
         if isinstance(value, pulse.Pulse): self._pulse = value
-        elif isinstance(value, (list, tuple)): self._pulse = getattr(pulse, value[0].upper())(*value[1])
+        elif isinstance(value, (list, tuple)): self._pulse = getattr(pulse, value[0].upper())(*value[1:])
         else: raise ValueError(f"Transmitter pulse must be a Pulse or str, but had type {type(value)}")
 
     @property
@@ -149,6 +190,6 @@ class Transmitter:
 
     @upsample_factor.setter
     def upsample_factor(self, value):
-        assert isinstance(value, int), f"upsample_factor must be an integer, but had type {type(value)}"
+        assert isinstance(value, (int, np.integer)), f"upsample_factor must be an integer, but had type {type(value)}"
         assert value > 0, f"upsample_factor must be positive (>0), but was {value}"
         self._upsample_factor = value

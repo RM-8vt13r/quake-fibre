@@ -5,8 +5,6 @@ Test correctness of fibre.py
 from configparser import ConfigParser
 import copy
 import sys
-import logging
-logging.basicConfig(level = logging.INFO)
 
 try:
     import cupy as cp
@@ -30,8 +28,8 @@ parameters['TRANSCEIVER'] = {
 parameters['FIBRE'] = {
     'correlation_length': '0.1',          # Correlation length in km
     'beat_length': '0.05',                # Beat length in km
-    'section_length': '0.0167',           # section length in km
-    'section_count': '1000',              # Number of fibre sections
+    'step_length': '0.0167',              # Simulation step length in km
+    'step_count': '1000',                 # Number of simulation steps
     'modulus_model': 'FIXED',             # Polarisation mode dispersion initialisation model
     'chromatic_dispersion': '0',          # Chromatic dispersion parameter in ps ^ 2 / km
     'nonlinearity': '0',                  # Nonlinearity parameter in 1 / (W km)
@@ -45,7 +43,7 @@ parameters['SIGNAL'] = {
 }
 
 parameters_geographic = copy.deepcopy(parameters)
-parameters_geographic['FIBRE']['section_count'] = 'None'
+parameters_geographic['FIBRE']['step_count'] = 'None'
 # parameters_geographic['FIBRE']['path_coordinates'] = '[\
 #     [102.57171090634661, 5.791616724837154],\
 #     [102.72290646910318, 5.906566563564761],\
@@ -64,12 +62,12 @@ def test_fibre_propagation():
         except: pass
         else:   raise AssertionError(f"{type(channel)} should raise an error when accessing unset path.coordinates, but didn't")
         try:
-            channel.section_path.coordinates
+            channel.step_path.coordinates
         except: pass
-        else:   raise AssertionError(f"{type(channel)} should raise an error when accessing unset section_path.coordinates, but didn't")
+        else:   raise AssertionError(f"{type(channel)} should raise an error when accessing unset step_path.coordinates, but didn't")
 
-        assert np.all(channel.section_path.lengths == parameters.getfloat('FIBRE', 'section_length')), f"{type(channel)} sections should have length section_length, but didn't"
-        assert channel.section_path.edge_count == parameters.getint('FIBRE', 'section_count'), f"{type(channel)} should have {parameters.getint('FIBRE', 'section_count')} sections, but had {channel.section_path.edge_count}"
+        assert np.all(channel.step_path.lengths == parameters.getfloat('FIBRE', 'step_length')), f"{type(channel)} steps should have length step_length, but didn't"
+        assert channel.step_path.edge_count == parameters.getint('FIBRE', 'step_count'), f"{type(channel)} should have {parameters.getint('FIBRE', 'step_count')} steps, but had {channel.step_path.edge_count}"
 
         transmitter = Transmitter(parameters)
         _, signal = transmitter.transmit_random(1, int(parameters.getfloat("SIGNAL", "symbol_count")))
@@ -91,6 +89,11 @@ def test_fibre_propagation():
         assert np.allclose(np.einsum('rbspq,rbsq->rbsp', jones_matrices_no_DGD, signal.samples_frequency), propagated_signal_no_DGD.samples_frequency), f"{type(channel)} propagation and Jones matrix produced different results"
         assert not np.allclose(jones_matrices_no_DGD, jones_matrices), f"{type(channel)} Jones matrices matched in the cases with and without differential group delay (but shouldn't)"
         channel._polarisation_mode_dispersion = parameters.getfloat('FIBRE', 'polarisation_mode_dispersion')
+
+        # Test partial transmission
+        half_propagated_signal = channel(signal, step_stop = channel.step_path.edge_count // 2)
+        full_propagated_signal = channel(half_propagated_signal, step_start = channel.step_path.edge_count // 2)
+        assert np.allclose(propagated_signal, full_propagated_signal), f"Propagating a signal through the fibre in one and two passes did not yield equal results"
 
         # Test chromatic dispersion, nonlinearity, polarisation-dependent loss and amplified spontaneous emission..
 
@@ -125,10 +128,10 @@ def test_fibre_propagation():
     if 'cupy' in sys.modules: signal.to_device(Device.CUDA)
 
     # Test different perturbations
-    perturbation_array = 1 + 10 * np.random.default_rng().normal(size = (channel.section_path.edge_count, 60))
-    perturbation_material_strains = Perturbation(material_strains = perturbation_array, sample_rate = 1)
-    perturbation_differential_phase_shifts = Perturbation(differential_phase_shifts = perturbation_array, sample_rate = 1)
-    perturbation_twists = Perturbation(twists = perturbation_array, sample_rate = 1)
+    perturbation_array = 1 + 10 * np.random.default_rng().normal(size = (channel.step_path.edge_count, 60))
+    perturbation_material_strains = Perturbation(path = channel.step_path, material_strains = perturbation_array, sample_rate = 1)
+    perturbation_differential_phase_shifts = Perturbation(path = channel.step_path, differential_phase_shifts = perturbation_array, sample_rate = 1)
+    perturbation_twists = Perturbation(path = channel.step_path, twists = perturbation_array, sample_rate = 1)
 
     propagated_signals_birefringence_scaled = channel(signal, transmission_start_times = [0, 30], perturbations = perturbation_material_strains)
     jones_matrices_birefringence_scaled = channel.Jones(signal.frequency_angular, transmission_start_times = [0, 30], perturbations = perturbation_material_strains)
@@ -192,14 +195,14 @@ def test_fibre_initialisation():
 
 def test_fibre_path():
     for channel in (FibreMarcuse(parameters_geographic), FibreCoarseStep(parameters_geographic)):
-        assert np.allclose(channel.section_path.lengths[:-1], parameters_geographic.getfloat('FIBRE', 'section_length')), "Fibre section lengths didn't match parameter section_length with geographic initialisation"
-        assert np.isclose(np.sum(channel.section_path.lengths), np.sum(channel.path.lengths)), f"Fibre path- and section lengths add up to {np.sum(channel.path.lengths)} and {np.sum(channel.section_path.lengths)}, but should have the same total"
+        assert np.allclose(channel.step_path.lengths[:-1], parameters_geographic.getfloat('FIBRE', 'step_length')), "Fibre step lengths didn't match parameter step_length with geographic initialisation"
+        assert np.isclose(np.sum(channel.step_path.lengths), np.sum(channel.path.lengths)), f"Fibre path- and step lengths add up to {np.sum(channel.path.lengths)} and {np.sum(channel.step_path.lengths)}, but should have the same total"
 
         try:
             channel.path.coordinates
-            channel.section_path.coordinates
+            channel.step_path.coordinates
         except AttributeError:
-            raise AssertionError("Channel should contain a path and a section_path with coordinates, but didn't")
+            raise AssertionError("Channel should contain a path and a step_path with coordinates, but didn't")
 
         transmitter = Transmitter(parameters)
         _, signal = transmitter.transmit_random(1, int(parameters.getfloat("SIGNAL", "symbol_count")))
