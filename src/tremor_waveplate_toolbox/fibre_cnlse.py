@@ -92,7 +92,7 @@ class FibreCNLSE(Fibre):
             if perturbation.twists is not None:
                 perturbing_rotation_matrix = signal.xp.where(
                         perturbation_sample_mask,
-                        perturbation.twists_rotation_matrices[step_index, perturbation_sample_indices],
+                        rotation_matrix(perturbation.twists[step_index, perturbation_sample_indices]),
                         0.0
                     )[None]
 
