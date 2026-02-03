@@ -61,13 +61,13 @@ class Transmitter:
         assert len(symbols.shape) == 3 and symbols.shape[-1] == 2, f"symbols should have shape [B,S,P] with P = 2, but had shape {symbols.shape}"
 
         symbols = Signal(
-            samples = symbols[None].copy(),
+            samples = symbols[None].astype(complex),
             sample_rate = self.pulse.symbol_rate
         )
 
         # Upsample to sample space
         samples = Signal(
-            samples = np.zeros([*symbols.shape[:-2], self.upsample_factor * symbols.shape[-2], symbols.shape[-1]]),
+            samples = np.zeros([*symbols.shape[:-2], self.upsample_factor * symbols.shape[-2], symbols.shape[-1]], dtype = complex),
             sample_rate = self.upsample_factor * self.pulse.symbol_rate,
             carrier_wavelength = carrier_wavelength
         )
@@ -100,7 +100,7 @@ class Transmitter:
         assert symbol_count > 0, f"symbol_count must be > 0, but was {symbol_count}"
 
         # Normalise symbol to unit energy
-        symbol /= np.sqrt(np.linalg.norm(symbol))
+        symbol /= np.linalg.norm(symbol)
 
         # Generate continuous-wave signal
         signal = Signal(

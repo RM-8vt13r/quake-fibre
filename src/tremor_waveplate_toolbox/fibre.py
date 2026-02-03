@@ -8,6 +8,7 @@ import logging
 import sys
 from abc import ABC, abstractmethod
 
+from tqdm import tqdm
 import numpy as np
 import scipy as sp
 try:
@@ -60,7 +61,6 @@ class Fibre(ABC):
                 'polarisation_mode_dispersion',
                 'realisation_count',
                 'photoelasticity',
-                'path_coordinates',
                 'modulus_model'
             ):
             assert field in parameters['FIBRE'], f"'{field}' is missing from parameters section 'FIBRE'."
@@ -70,7 +70,7 @@ class Fibre(ABC):
         self._step_length                  = parameters.getfloat('FIBRE', 'step_length')
         self._chromatic_dispersion         = parameters.getfloat('FIBRE', 'chromatic_dispersion')
         self._nonlinearity                 = parameters.getfloat('FIBRE', 'nonlinearity')
-        self._attenuation                  = parameters.getfloat('FIBRE', 'attenuation')
+        self.attenuation                   = parameters.getfloat('FIBRE', 'attenuation')
         self._polarisation_mode_dispersion = parameters.getfloat('FIBRE', 'polarisation_mode_dispersion')
         self._realisation_count            = int(parameters.getfloat('FIBRE', 'realisation_count'))
         self._photoelasticity              = parameters.getfloat('FIBRE', 'photoelasticity')
@@ -137,111 +137,10 @@ class Fibre(ABC):
 
     def propagate(self, signal: Signal, transmission_start_times: (float, np.ndarray) = 0, perturbations: (Perturbation, list) = [], step_start: int = None, step_stop: int = None) -> Signal:
         """
-        Propagate a polarisation-multiplexed phase-multiplexed signal through the fibre.
-        Multiple fibre realisations are applied at once.
-        The calculations will be done on the device (CPU or GPU) that signal resides in (see Signal.to_device())
-
-        Inputs:
-        - signal [Signal]: the signal to propagate through the channel, shape [R,B,S,P] with number of realisations R or R = 1, batch size B, sample count S and principal polarisations P = 2.
-        - transmission_start_times [float, np.ndarray]: timestamp(s) at which the signal transmission(s) begins in s, relative to the start time of a perturbation. If not a float, shape [T,].
-        - perturbations [Perturbation, list]: Model these perturbations during signal transmission, in order of appearance. All birefringence scaling is applied before addition.
-        - step_start [int]: Index of the first fibre step to model. If None, defaults to 0.
-        - step_stop [int]: Index of the first fibre step not to model. If None, defaults to self.step_path.edge_count
-
-        Outputs:
-        - [Signal]: the output signal, shape [R,B,S,P] or [R,T,S,P]
-        """
-        assert signal.sample_axis_negative == -2, f"signal must have sample axis -2, but it was {signal.sample_axis_negative}"
-        assert signal.shape[-1] == 2, f"signal must have two polarisations on the last axis, but had {signal.shape[-1]}"
-        assert len(signal.shape) == 4, f"signal must have shape [R,B,S,P], but had shape {signal.shape}"
-        if signal.device == Device.CUDA: signal.to_device(Device.CUDA) # Ensure that the signal resides in the currently active cupy GPU
-        
-        signal = self._propagate_master(
-                signal.copy(),
-                signal.frequency_angular,
-                transmission_start_times,
-                perturbations,
-                step_start,
-                step_stop
-            )
-
-        return signal
-
-    def Jones(self, frequency_angular: (np.ndarray), carrier_wavelength: float = 1550., transmission_start_times: (float, np.ndarray) = 0, perturbations: (Perturbation, list) = [], step_start: int = None, step_stop: int = None) -> np.ndarray:
-        """
-        Calculate the fibre Jones matrix.
-        The calculations will be done on the device (CPU or GPU) that frequency_angular resides in (see Signal.to_device())
-        The matrix will exclude any noise or nonlinear effects.
-
-        Inputs:
-        - frequency_angular [np.ndarray, cp.ndarray]: frequencies in rad/s at which to calculate the jones matrix, relative to the carrier frequency, shape [S,]
-        - carrier_wavelength [float]: carrier wavelength in nm
-        - transmission_start_times [float, np.ndarray]: timestamp(s) at which the signal transmission(s) begins in s, relative to the start time of a perturbation. If not a float, shape [T,].
-        - perturbations [Perturbation, list]: Model these perturbations during signal transmission, in order of appearance. All birefringence scaling is applied before addition.
-        - step_start [int]: Index of the first fibre step to model. If None, defaults to 0.
-        - step_stop [int]: Index of the first fibre step not to model. If None, defaults to self.step_path.edge_count
-
-        Outputs:
-        - [np.ndarray, cp.ndarray]: the Jones matrices, shape [R,T,S,2,2]
-        """
-        if 'cupy' in sys.modules and isinstance(frequency_angular, cp.ndarray):
-            xp = cp
-            frequency_angular = xp.array(frequency_angular) # Ensure that the frequency array resides in the currently active cupy GPU
-        else:
-            xp = np
-
-        assert len(frequency_angular.shape) == 1, f"frequency_angular must have shape [F,], but had shape {frequency_angular.shape}"
-        assert self.nonlinearity == 0, f"Jones matrices can only be calculated for fibres with a nonlinearity coefficient of 0."
-        
-        Jones_matrix_transposed = Signal(
-                samples = xp.eye(2, dtype = complex)[None, None, None],
-                sample_rate = 1, # Placeholder value
-                sample_axis = -3,
-                domain = Domain.FREQUENCY,
-                carrier_wavelength = carrier_wavelength
-            )
-
-        Jones_matrix_transposed = self._propagate_master(
-                Jones_matrix_transposed,
-                frequency_angular,
-                transmission_start_times,
-                perturbations,
-                step_start,
-                step_stop
-            )
-
-        return xp.moveaxis(Jones_matrix_transposed.samples, -1, -2)
-
-    def accumulate_differential_group_delays(self, device: Device = Device.CPU) -> np.ndarray:
-        """
-        Accumulated differential group delay in ps, shape [R] where R is the number of fibre realisations
-        """
-        match(device):
-            case Device.CPU: xp = np
-            case Device.CUDA:
-                assert 'cupy' in sys.modules, f"Cannot calculate differential group delay on CUDA; no cupy installation found"
-                xp = cp
-                
-        frequency_angular = xp.array([-xp.pi, xp.pi]) / (60 * self.step_path.lengths[0])
-
-        Jones_matrices = self.Jones(frequency_angular)[:, 0] # [R,F,2,2]
-        Jones_matrices_derivative = xp.diff(Jones_matrices, axis = 1)[:, 0] / xp.diff(frequency_angular)[0]
-
-        differential_group_delay = 2 * xp.sqrt(xp.linalg.det(Jones_matrices_derivative)) * 1e12 # Gordon et al. - PMD Fundamentals: Polarization Mode Dispersion in Optical Fibres
-        differential_group_delay = differential_group_delay.real.astype(float)
-
-        if xp != np: differential_group_delay = differential_group_delay.get()
-
-        return differential_group_delay
-
-    @abstractmethod
-    def _propagate_master(self, signal: Signal, frequency_angular: np.ndarray, transmission_start_times: (float, np.ndarray) = 0, perturbations: (Perturbation, list) = [], step_start: int = None, step_stop: int = None) -> Signal:
-        """
         Method called by propagate() and Jones() to simulate the fibre response.
 
         Inputs:
         - signal [Signal]: the signal or transposed Jones matrix to propagate through the channel, shape [R,B,S,P] with number of realisations R or R = 1, batch size B, sample count S and principal polarisations P = 2, OR shape [R, S, P, P] where the last two axes contain Jones transfer matrices.
-        - frequency_angular [np.ndarray, cp.ndarray]: frequencies of the signal or Jones matrix in rad/s, relative to the carrier frequency, shape [S,]
         - transmission_start_times [float, np.ndarray]: timestamp(s) at which the signal transmission(s) begins in s, relative to the start time of a perturbation. If not a float, shape [T,].
         - perturbations [Perturbation, list]: Model these perturbations during signal transmission, in order of appearance. All birefringence scaling is applied before addition.
         - step_start [int]: Index of the first fibre step to model. If None, defaults to 0.
@@ -254,12 +153,253 @@ class Fibre(ABC):
             assert isinstance(step_start, (int, np.integer)), f"step_start must be an int, but was a {type(step_start)}"
             assert step_start >= 0, f"step_start must be >= 0, but was {step_start}"
             assert step_start < self.step_path.edge_count, f"step_start must be < self.step_path.edge_count ({self.step_path.edge_count}), but was {step_start}"
+
         if step_stop is not None:
             assert isinstance(step_stop, (int, np.integer)), f"step_stop must be an int, but was a {type(step_stop)}"
             assert step_start is None or step_stop > step_start, f"step_stop must be > step_start ({step_start}), but was {step_stop}"
-            # assert step_stop <= self.step_path.edge_count, f"step_stop must be <= self.step_path.edge_count ({self.step_path.edge_count}), but was {step_stop}"
             if step_stop > self.step_path.edge_count:
                 logger.warning(f"step_stop {step_stop} is larger than the number of fibre steps {self.step_path.edge_count}")
+
+        signal                   = self._prepare_signal(signal)
+        transmission_start_times = self._prepare_transmission_start_times(signal, transmission_start_times)
+        perturbations            = self._prepare_perturbations(signal, perturbations)
+        steps_iterable           = self._prepare_steps_iterable(signal, perturbations, step_start, step_stop)
+
+        linear_exponent = signal.xp.zeros(shape = (self.realisation_count, max(len(transmission_start_times), signal.shape[1]), *signal.shape[2:]), dtype = complex) # [R, B, S, P]
+
+        for step_index, step_values in enumerate(steps_iterable):
+            step_length = step_values[0]
+            birefringence_quantities = step_values[1:]
+            linear_exponent[:] = 0
+
+            if self.chromatic_dispersion != 0.:
+                linear_exponent = self._apply_chromatic_dispersion(linear_exponent, signal, step_length / 2)
+
+            if self.polarisation_mode_dispersion != 0.:
+                if len(perturbations):
+                    perturbations_sample_masks, perturbations_sample_indices = self._step_perturbations_indices(signal, perturbations, transmission_start_times, step_index)
+                    birefringence_quantities = self._perturb_birefringence_quantities(signal, step_index, perturbations, perturbations_sample_masks, perturbations_sample_indices, *birefringence_quantities)
+                
+                signal = self._prepare_birefringence(signal, *birefringence_quantities)
+                linear_exponent = self._apply_half_birefringence(linear_exponent, signal, *birefringence_quantities)
+
+            if self.nonlinearity != 0.:
+                signal = self._apply_linear_exponent(linear_exponent, signal) # Apply half the linear effects in the frequency domain
+                linear_exponent[:] = 0 # Re-initialise exponent to zeros
+                signal = self._apply_nonlinearity(signal, step_length) # Apply the nonlinear effects in the time domain
+
+            if self.attenuation > -np.inf:              linear_exponent = self._apply_attenuation(linear_exponent, step_length)
+            if self.chromatic_dispersion != 0.:         linear_exponent = self._apply_chromatic_dispersion(linear_exponent, signal, step_length / 2)
+            if self.polarisation_mode_dispersion != 0.: linear_exponent = self._apply_half_birefringence(linear_exponent, signal, *birefringence_quantities)
+
+            signal = self._apply_linear_exponent(linear_exponent, signal) # Apply the remaining linear effects in the frequency domain
+
+            if self.polarisation_mode_dispersion != 0.:
+                signal = self._finalise_birefringence(signal, *birefringence_quantities)
+
+        return signal
+
+    def Jones(self, sample_rate: float = None, sample_count: int = 1, carrier_wavelength: float = 1550., device: Device = Device.CPU, signal: Signal = None, transmission_start_times: (float, np.ndarray) = 0, perturbations: (Perturbation, list) = [], step_start: int = None, step_stop: int = None) -> np.ndarray:
+        """
+        Calculate the fibre Jones matrix.
+        The matrix will exclude any noise or nonlinear effects.
+        Internally, this function builds a frequency-dependent signal and calls propagate(), after which a frequency-dependent Jones matrix is constructed from the result.
+
+        Inputs:
+        - sample_rate [float]: sample rate in samples per second of the internally used Signal.
+        - sample_count [int]: number of frequencies at which to evaluate the Jones matrix. This will result in sample_count frequencies uniformly spaced in the open interval [-sample_rate/2, sample_rate/2)
+        - carrier_wavelength [float]: carrier wavelength in nm
+        - device [Device]: Device on which to perform the calculations.
+        - signal [Signal]: if not None, use the sample_rate, sample_count, carrier_wavelength and device from this signal instead
+        - transmission_start_times [float, np.ndarray]: timestamp(s) at which the signal transmission(s) begins in s, relative to the start time of a perturbation. If not a float, shape [T,].
+        - perturbations [Perturbation, list]: Model these perturbations during signal transmission, in order of appearance. All birefringence scaling is applied before addition.
+        - step_start [int]: Index of the first fibre step to model. If None, defaults to 0.
+        - step_stop [int]: Index of the first fibre step not to model. If None, defaults to self.step_path.edge_count
+        
+        Outputs:
+        - [Signal]: the Jones matrices, shape [R,T,S,2,2] where R is the fibre realisation count, S the sample_count, and the last two axes contain the matrices
+        """
+        assert self.nonlinearity == 0., f"Jones matrices can only be calculated for linear fibres, but the nonlinearity coefficient was {self.nonlinearity} != 0."
+
+        if signal is not None:
+            sample_rate        = signal.sample_rate
+            sample_count       = signal.sample_count
+            carrier_wavelength = signal.carrier_wavelength
+            device = signal.device
+
+        assert sample_count == 1 or (sample_rate is not None and sample_rate > 0), f"sample_rate must be > 0, but was {sample_rate}"
+        assert sample_count >= 1, f"sample_count must be >= 1, but was {sample_count}"
+
+        probe_samples_frequency = np.full(shape = (1, 1, sample_count, 2), fill_value = [1, 0], dtype = complex)
+        probe_signal = Signal(
+            samples = probe_samples_frequency,
+            sample_rate = sample_rate,
+            domain = Domain.FREQUENCY,
+            carrier_wavelength = carrier_wavelength
+        )
+        probe_signal.to_device(device)
+
+        probed_signal = self.propagate(probe_signal, transmission_start_times, perturbations, step_start, step_stop)
+
+        Jones_columns_1 = probed_signal.samples_frequency
+        Jones_columns_2 = probed_signal.samples_frequency
+        Jones_columns_2 = probed_signal.xp.flip(Jones_columns_2, axis = -1)
+        Jones_columns_2 = probed_signal.xp.conjugate(Jones_columns_2)
+        Jones_columns_2[..., 0] = -Jones_columns_2[..., 0]
+        Jones_matrices = Signal(
+            samples = probed_signal.xp.stack([Jones_columns_1, Jones_columns_2], axis = -1),
+            sample_rate = sample_rate,
+            sample_axis = -3,
+            domain = Domain.FREQUENCY,
+            carrier_wavelength = carrier_wavelength
+        )
+
+        return Jones_matrices
+
+    def accumulate_differential_group_delays(self, device: Device = Device.CPU, transmission_start_times: (float, np.ndarray) = 0, perturbations: (Perturbation, list) = [], step_start: int = None, step_stop: int = None) -> np.ndarray:
+        """
+        Accumulated differential group delay in ps, shape [R] where R is the number of fibre realisations.
+        See Jones() for an explanation of the arguments.
+        """
+        match(device):
+            case Device.CPU: xp = np
+            case Device.CUDA:
+                assert 'cupy' in sys.modules, f"Cannot calculate differential group delay on CUDA; no cupy installation found"
+                xp = cp
+                
+        Jones_matrices = self.Jones(sample_rate = xp.pi / (30 * self.step_path.lengths[0]), sample_count = 2, device = device, transmission_start_times = transmission_start_times, perturbations = perturbations, step_start = step_start, step_stop = step_stop)
+        Jones_matrices_derivative = xp.diff(Jones_matrices.samples_frequency, axis = 2)[:, 0] / (-2 * xp.pi * Jones_matrices.sample_rate / Jones_matrices.sample_count) #xp.diff(Jones_matrices.frequency_angular)[0]
+
+        differential_group_delay = 2 * xp.sqrt(xp.linalg.det(Jones_matrices_derivative)) * 1e12 # Gordon et al. - PMD Fundamentals: Polarization Mode Dispersion in Optical Fibres
+        differential_group_delay = differential_group_delay.real.astype(float)
+
+        if xp != np: differential_group_delay = differential_group_delay.get()
+
+        return differential_group_delay
+
+    def _prepare_signal(self, signal):
+        assert signal.sample_axis_negative == -2, f"signal must have sample axis -2, but it was {signal.sample_axis_negative}"
+        assert signal.shape[-1] == 2, f"signal must have two polarisations on the last axis, but had {signal.shape[-1]}"
+        assert len(signal.shape) == 4, f"signal must have shape [R,B,S,P], but had shape {signal.shape}"
+        signal = signal.copy()
+        signal.to_device(signal.device) # Ensure that signal resides in the currently active GPU, or keep it on CPU if no GPU is active
+        return signal
+
+    def _prepare_perturbations(self, signal, perturbations):
+        if not isinstance(perturbations, (list, tuple)):
+            perturbations = (perturbations,)
+
+        for perturbation in perturbations:
+            assert isinstance(perturbation, Perturbation), f"All perturbations must have type Perturbation, but at least one had type {type(perturbation)}"
+            perturbation.to_device(signal.device)
+
+        return perturbations
+        
+    def _prepare_transmission_start_times(self, signal, transmission_start_times):
+        if isinstance(transmission_start_times, (int, np.integer, float, np.floating)):
+            transmission_start_times = [transmission_start_times]
+        
+        transmission_start_times = signal.invite_array(transmission_start_times)
+
+        assert len(transmission_start_times.shape) == 1, f"transmission_start_times must have shape [T,], but had shape {transmission_start_times.shape}"
+        if len(transmission_start_times > 1):
+            assert signal.shape[1] == 1, f"If transmission_start_times has shape [T > 1,] signal must have batch size 1, but this was {signal.shape[1]}"
+        
+        return transmission_start_times
+
+    def _prepare_steps_iterable(self, signal, perturbations, step_start, step_stop):
+        steps_iterable_arrays = self._prepare_steps_iterable_arrays(signal, step_start, step_stop)
+        steps_iterable = zip(*steps_iterable_arrays)
+
+        desc_string = "Propagating signal "
+        if step_start is not None: desc_string += f"from fibre step {step_start + 1} "
+        if step_stop is not None: desc_string += f"until step {step_stop} of {self.step_path.edge_count} "
+        desc_string += "("
+        desc_string += "CPU" if signal.device == Device.CPU else "CUDA"
+        if len(perturbations): desc_string += ", perturbed"
+        desc_string += ")"
+        if logger.isEnabledFor(logging.INFO):
+            steps_iterable = tqdm(
+                steps_iterable,
+                total = (self.step_path.edge_count if step_stop is None else step_stop) - (0 if step_start is None else step_start),
+                desc = desc_string
+            )
+
+        return steps_iterable
+
+    @abstractmethod
+    def _prepare_steps_iterable_arrays(self, signal, step_start, step_stop):
+        step_lengths              = signal.invite_array(self.step_path.lengths[step_start:step_stop])
+        differential_group_delays = signal.invite_array(self.differential_group_delays[step_start:step_stop, :, None, None]) # [S, R, 1, 1]
+        return step_lengths, differential_group_delays
+
+    def _step_perturbations_indices(self, signal, perturbations, transmission_start_times, step_index):
+        perturbations_sample_times      = transmission_start_times + self.step_path.centre_positions[step_index] / self.group_velocity(signal.carrier_wavelength) # [B,]
+        perturbations_sample_masks      = signal.xp.zeros(shape = (len(perturbations), len(perturbations_sample_times)), dtype = bool) # [P, B]
+        perturbations_sample_indices    = signal.xp.zeros_like(perturbations_sample_masks, dtype = int) # [P, B]
+        for index, perturbation in enumerate(perturbations):
+            perturbations_sample_masks[index]      = (perturbations_sample_times >= perturbation.start_time) & (perturbations_sample_times < perturbation.start_time + perturbation.duration)
+            perturbations_sample_indices[index]    = signal.xp.floor((perturbations_sample_times - perturbation.start_time) * perturbation.sample_rate).astype(int)
+        
+        return perturbations_sample_masks, perturbations_sample_indices
+
+    @abstractmethod
+    def _perturb_birefringence_quantities(self, signal, step_index, perturbations, perturbation_sample_masks, perturbation_sample_indices, *birefringence_quantities):
+        pass
+
+    def _apply_chromatic_dispersion(self, linear_exponent, signal, step_length):
+        # signal.samples_frequency = signal.samples_frequency * signal.xp.exp(1j * 0.5 * self.chromatic_dispersion * signal.frequency_angular ** 2 * step_length * 1e-24)[None, None, :, None]
+        # return signal
+        return linear_exponent + 0.5j * self.chromatic_dispersion * signal.frequency_angular[None, None, :, None] ** 2 * step_length * 1e-24 # [R, B, S, P]
+
+    @abstractmethod
+    def _prepare_birefringence(self, linear_exponent, signal, birefringence_quantities):
+        pass
+
+    @abstractmethod
+    def _apply_half_birefringence(self, linear_exponent, signal, *birefringence_quantities):
+        pass
+
+    @abstractmethod
+    def _finalise_birefringence(self, linear_exponent, signal, birefringence_quantities):
+        pass
+
+    def _apply_nonlinearity(self, signal, step_length):
+        """
+        Nonlinearity is applied only when propagating a signal (not when building a Jones matrix). Therefore, signal always has shape [R, B, S, P] here with realisations R, batch size B, time/frequency axis S and polarisations P = 2
+        """
+        # signal.samples_time = signal.samples_time * signal.xp.exp(1j * 8 / 9 * self.nonlinearity * step_length * np.linalg.norm(signal.samples_time, axis = -1)[:, :, :, None] ** 2) # ??? Wrong for now, look at Marcuse's paper
+        signal_power   = signal.xp.linalg.norm(signal.samples_time, axis = -1)[:, :, :, None, None] ** 2 # [R, B, S, 1, 1]
+
+        signal_rotator = -1/3 * signal.xp.einsum(
+            'rbsp,pq,rbsq->rbs',
+            signal.samples_time,
+            PAULI_3 if signal.device == Device.CPU else PAULI_3_CUDA,
+            signal.samples_time,
+            optimize = True
+        )[:, :, :, None, None] * (PAULI_3 if signal.device == Device.CPU else PAULI_3_CUDA) # [R, B, S, 2, 2]
+        
+        nonlinearity_operator = signal.xp.exp(1j * self.nonlinearity * (signal_power + signal_rotator) * step_length) # Eq. 2 in Marcuse et al. (1997), Eq. 5 in Menyuk et al. (1987). ??? halve kerr parameter as in Menyuk et al?
+        nonlinearity_operator = signal.xp.moveaxis(nonlinearity_operator, (-1, -2)) # Transpose operator for efficient einsum
+        
+        signal.samples_time = signal.xp.einsum(
+            'rbsqp,rbsq->rbsp',
+            nonlinearity_operator,
+            signal.samples_time,
+            optimize = True
+        )
+
+        return signal
+
+    def _apply_attenuation(self, linear_exponent, step_length):
+        """
+        Attenuation is applied only when propagating a signal (not when building a Jones matrix). Therefore, signal always has shape [R, B, S, P] here with realisations R, batch size B, time/frequency axis S and polarisations P = 2
+        """
+        return linear_exponent + self.attenuation_exponent * step_length
+
+    def _apply_linear_exponent(self, linear_exponent, signal):
+        signal.samples_frequency = signal.samples_frequency * signal.xp.exp(linear_exponent)
+        return signal
 
     def group_velocity(self, carrier_wavelength: float):
         """
@@ -288,6 +428,7 @@ class Fibre(ABC):
             'polarisation_mode_dispersion': self.polarisation_mode_dispersion,
             'chromatic_dispersion':         self.chromatic_dispersion,
             'nonlinearity':                 self.nonlinearity,
+            'attenuation':                  self.attenuation,
             'realisation_count':            self.realisation_count,
             'photoelasticity':              self.photoelasticity,
             'modulus_model':                self.modulus_model.name,
@@ -319,6 +460,7 @@ class Fibre(ABC):
         parameters.set('FIBRE', 'beat_length',                  str(fibre_dict['beat_length']))
         parameters.set('FIBRE', 'chromatic_dispersion',         str(fibre_dict['chromatic_dispersion']))
         parameters.set('FIBRE', 'nonlinearity',                 str(fibre_dict['nonlinearity']))
+        parameters.set('FIBRE', 'attenuation',                  str(fibre_dict['attenuation']))
         parameters.set('FIBRE', 'polarisation_mode_dispersion', str(fibre_dict['polarisation_mode_dispersion']))
         parameters.set('FIBRE', 'realisation_count',            str(fibre_dict['realisation_count']))
         parameters.set('FIBRE', 'photoelasticity',              str(fibre_dict['photoelasticity']))
@@ -341,7 +483,7 @@ class Fibre(ABC):
             fibre._path = path
 
         return fibre
-        
+
     def __eq__(self, other) -> bool:
         return self._polarisation_mode_dispersion  == other._polarisation_mode_dispersion and \
             self._photoelasticity                  == other._photoelasticity              and \
@@ -428,7 +570,21 @@ class Fibre(ABC):
 
     @attenuation.setter
     def attenuation(self, value):
-        raise AttributeError("The attenuation parameter cannot be changed after instantiation of the Fibre")
+        assert isinstance(value, (int, np.integer, float, np.floating)), f"attenuation must be a float, but was a {type(value)}"
+        self._attenuation = float(value)
+        self._attenuation_exponent = -self.attenuation / 20 * np.log(10)
+        # raise AttributeError("The attenuation parameter cannot be changed after instantiation of the Fibre")
+
+    @property
+    def attenuation_exponent(self) -> float:
+        """
+        [float] the exponent that applies attenuation of this Fibre per km. exp(attenuation_exponent * step_length) = 10 ** (-attenuation * step_length / 20)
+        """
+        return float(self._attenuation_exponent)
+
+    @attenuation_exponent.setter
+    def attenuation_exponent(self) -> float:
+        raise AttributeError("attenuation_exponent cannot be set directly; set attenuation instead")
 
     @property
     def polarisation_mode_dispersion(self) -> float:

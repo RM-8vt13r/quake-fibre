@@ -1,9 +1,7 @@
 """
 An optical fibre channel model base class for dual-polarisation transmission, based on the coarse-step method.
-Currently it models only PMD effects: (perturbed) differential phase and major birefringence axes rotations.
 """
 from typing import override
-from tqdm import tqdm
 import logging
 
 import numpy as np
@@ -50,7 +48,7 @@ class FibreCoarseStep(Fibre):
     @override
     def _init_scramblers(self):
         """
-        Initialise random scramblers between fibre sections that perform a frequency-invariant scrambling of the state of polarisation.
+        Initialise random scramblers between fibre steps that perform a frequency-invariant scrambling of the state of polarisation.
         """
         random_vectors = np.random.default_rng().normal(
            size = (self.step_path.edge_count, self.realisation_count, 4)
@@ -62,59 +60,49 @@ class FibreCoarseStep(Fibre):
         self.scramblers   = sp.linalg.expm(-1j * rotation_angles[:, :, None, None] * np.einsum('sra,apq->srpq', rotation_axes, PAULI_VECTOR))
 
     @override
-    def _propagate_master(self, signal: Signal, frequency_angular: np.ndarray, transmission_start_times: (float, np.ndarray) = 0, perturbations: (Perturbation, list) = [], step_start: int = None, step_stop: int = None) -> Signal:
+    def propagate(self, signal: Signal, transmission_start_times: (float, np.ndarray) = 0, perturbations: (Perturbation, list) = [], step_start: int = None, step_stop: int = None) -> Signal:
         """
         Master function both for propagating a signal or building a Jones transfer matrix
         """
-        super()._propagate_master(signal, frequency_angular, transmission_start_times, perturbations, step_start, step_stop)
-
         assert len(perturbations) == 0, f"Perturbations not yet implemented in the coarse-step fibre model"
         assert self.chromatic_dispersion == 0, f"Chromatic dispersion not yet implemented in the coarse-step fibre model"
         assert self.nonlinearity == 0, f"Nonlinearity not yet implemented in the coarse-step fibre model"
-        assert np.isinf(self.attenuation), f"Attenuation not yet implemented in the coarse-step fibre model"
+        # assert np.isinf(self.attenuation), f"Attenuation not yet implemented in the coarse-step fibre model"
 
-        if not isinstance(transmission_start_times, (int, np.integer, float, np.floating)):
-            transmission_start_times = signal.xp.array(transmission_start_times)
-            assert len(transmission_start_times.shape) == 1, f"transmission_start_times must have shape [T,], but had shape {transmission_start_times.shape}"
-            assert signal.shape[signal.sample_axis - 1] == 1, f"If transmission_start_times has shape [T,] signal must have batch size 1, but this was {signal.shape[signal.sample_axis - 1]}"
-        else:
-            transmission_start_times = signal.xp.array([transmission_start_times])
+        return super().propagate(signal, transmission_start_times, perturbations, step_start, step_stop)
 
-        differential_group_delays = signal.xp.array(self.differential_group_delays[step_start:step_stop, :, *(None,) * -signal.sample_axis_negative]) # [S, R, 1, 1]/[S, R, 1, 1, 1]
-        scramblers = signal.xp.array(self.scramblers[step_start:step_stop, :, *(None,) * -(1 + signal.sample_axis_negative)]) # [S, R, 1, 2, 2]/[S, R, 1, 1, 2, 2]
+    @override
+    def _prepare_steps_iterable_arrays(self, signal, step_start, step_stop):
+        step_lengths, differential_group_delays = super()._prepare_steps_iterable_arrays(signal, step_start, step_stop)
+        scramblers = signal.invite_array(self.scramblers[step_start:step_stop, :, None]) # [S, R, 1, 2, 2]
+        return step_lengths, differential_group_delays, scramblers
 
-        frequency_angular = frequency_angular[*(None,) * 2, :, *(None,) * -(2 + signal.sample_axis_negative)] # [1, 1, F]/[1, 1, F, 1]
+    def _perturb_birefringence_quantities(self, signal, step_index, perturbations, perturbation_sample_masks, perturbation_sample_indices, *birefringence_quantities):
+        pass
 
-        iterable = zip(differential_group_delays, scramblers)
+    @override
+    def _prepare_birefringence(self, signal, differential_group_delay, scrambler):
+        return signal
 
-        desc_string = "Propagating signal through fibre " if signal.sample_axis_negative == -2 else "Building Jones matrix "
-        if step_start is not None: desc_string += f"from step {step_start + 1} "
-        if step_stop is not None: desc_string += f"until step {step_stop} "
-        desc_string += "("
-        desc_string += "CPU" if signal.device == Device.CPU else "CUDA"
-        if len(perturbations): desc_string += ", perturbed"
-        desc_string += ")"
-        if logger.isEnabledFor(logging.INFO):
-            iterable = tqdm(
-                iterable,
-                total = (self.step_path.edge_count if step_stop is None else step_stop) - (0 if step_start is None else step_start),
-                desc = desc_string
+    @override
+    def _apply_half_birefringence(self, linear_exponent, signal, differential_group_delay, scrambler):
+        birefringence_exponent = 0.25j * differential_group_delay * signal.frequency_angular * 1e-12 # [R, B, 1] * [F] = [R, B, F]. 0.25 because 1) we have two polarisations and 2) we apply only half the birefringence
+        linear_exponent[:, :, :, 0] += birefringence_exponent
+        linear_exponent[:, :, :, 1] -= birefringence_exponent
+        return linear_exponent
+
+    @override
+    def _finalise_birefringence(self, signal, differential_group_delay, scrambler):
+        signal = self._scramble(signal, scrambler)
+        return signal
+
+    def _scramble(self, signal, scrambler):
+        signal.samples_frequency = signal.xp.einsum( # [R, 1, 2, 2] @ [R, B, F, 2] = [R, B, F, 2]
+                'rbpq,rbsq->rbsp',
+                scrambler, # rotation_matrix(-major_angle) = rotation_matrix(major_angle).transpose
+                signal.samples_frequency,
+                optimize = True
             )
-
-        for differential_group_delay, scrambler in iterable: # [R, 1, 1], [R, 1]
-            if self.polarisation_mode_dispersion != 0:
-                # Apply local differential group delay
-                differential_group_delay = signal.xp.exp(-0.5j * differential_group_delay * frequency_angular * 1e-12) # [R, 1, 1]/[R, 1, 1, 1] * [1, 1, F]/[1, 1, F, 1] = [R, 1, F]/[R, 1, F, 1]
-                signal.samples_frequency = signal.samples_frequency * signal.xp.stack([differential_group_delay, differential_group_delay.conjugate()], axis = -1) # [R, B, F, 2]/[R, B, F, 2, 2] * [R, 1, F, 2]/[R, 1, F, 1, 2] = [R, B, F, 2]/[R, B, F, 2, 2]
-
-                # Scramble state of polarisation
-                signal.samples_frequency = signal.xp.einsum( # [R, 1, 2, 2]/[R, 1, 1, 2, 2] @ [R, B, F, 2]/[R, B, F, 2, 2] = [R, B, F, 2]/[R, B, F, 2, 2]
-                    '...pq,...sq->...sp',
-                    scrambler,
-                    signal.samples_frequency,
-                    optimize = True
-                )
-
         return signal
 
     @override

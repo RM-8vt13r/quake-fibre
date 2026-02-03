@@ -31,7 +31,7 @@ def test_earthquake():
     path = Path(*zip(*path_coordinates))
     earthquake = Earthquake(parameters)
 
-    _, displacements_local, displacements_global, displacements_projected, strains_projected = earthquake.request_projected_strains(path, None, None, True, True, True, parameters.getint('EARTHQUAKE', 'batch_size_sparse'), parameters.getint('EARTHQUAKE', 'worker_count'), parameters.getfloat('EARTHQUAKE', 'request_delay'))
+    displacements_local, displacements_global, displacements_projected, strains_projected = earthquake.request_projected_strains(path, None, None, True, True, True, parameters.getint('EARTHQUAKE', 'batch_size_sparse'), parameters.getint('EARTHQUAKE', 'worker_count'), parameters.getfloat('EARTHQUAKE', 'request_delay'))
     # assert len(times.shape) == 1, f"times should have one dimension, but had shape {times.shape}"
     assert displacements_local.shape[0] == path.vertex_count, f"path vertex count should match the first dimension of displacements_local, but these were {path.vertex_count} and {displacements_local.shape}"
     assert displacements_local.shape[2] == 3, f"displacements_local should have three channels (normal, longitude, latitude), but had {displacements_local.shape[2]}"
@@ -53,12 +53,12 @@ def test_concurrency():
     assert np.allclose(strains_projected_sequential.samples_time, strains_projected_concurrent.samples_time), f"Earthquake strains must match when requested sequentially or concurrently, but didn't"
 
 def test_interpolation():
-    path = Path(*zip(*path_coordinates)).interpolated(parameters.getfloat('EARTHQUAKE', 'step_size_dense'))
+    path = Path(*zip(*path_coordinates)).interpolated(parameters.getfloat('EARTHQUAKE', 'step_length_dense'))
     earthquake = Earthquake(parameters)
 
-    _, displacements_global_interpolated, displacements_projected_interpolated, strains_projected_interpolated = earthquake.request_projected_strains(
+    displacements_global_interpolated, displacements_projected_interpolated, strains_projected_interpolated = earthquake.request_projected_strains(
             path,
-            parameters.getfloat('EARTHQUAKE', 'step_size_sparse'),
+            parameters.getfloat('EARTHQUAKE', 'step_length_sparse'),
             None,
             False,
             True,
@@ -68,7 +68,7 @@ def test_interpolation():
             parameters.getfloat('EARTHQUAKE', 'request_delay')
         )
 
-    _, displacements_global_raw, displacements_projected_raw, strains_projected_raw = earthquake.request_projected_strains(
+    displacements_global_raw, displacements_projected_raw, strains_projected_raw = earthquake.request_projected_strains(
             path,
             None,
             None,
@@ -82,8 +82,8 @@ def test_interpolation():
 
     # perturbation_interpolated = earthquake.get_perturbation(
     #         path,
-    #         parameters.getfloat('EARTHQUAKE', 'step_size_sparse'),
-    #         parameters.getint('EARTHQUAKE', 'batch_size_sparse'),
+    #         parameters.getfloat('EARTHQUAKE', 'step_length_sparse'),
+    #         parameters.getint('EARTHQUAKE', 'batch_length_sparse'),
     #         parameters.getint('EARTHQUAKE', 'worker_count'),
     #         parameters.getfloat('EARTHQUAKE', 'request_delay')
     #     )
@@ -97,43 +97,38 @@ def test_interpolation():
 
     # assert perturbation_interpolated.shape == perturbation_raw.shape, f"Synthesised and interpolated earthquake strains must have the same shapes, but these were {perturbation_raw.shape} and {perturbation_interpolated.shape}"
     
-    import matplotlib.pyplot as plt
-    fig, ax = plt.subplots(3, 1)
-    ax[0].grid(True)
-    ax[0].plot(displacements_global_raw.samples_time[:, 10000], 'b-')
-    ax[0].plot(displacements_global_interpolated.samples_time[:, 10000], 'r-x')
+    # import matplotlib.pyplot as plt
+    # fig, ax = plt.subplots(3, 1)
+    # ax[0].grid(True)
+    # ax[0].plot(displacements_global_raw.samples_time[:, 10000], 'b-')
+    # ax[0].plot(displacements_global_interpolated.samples_time[:, 10000], 'r-x')
 
-    ax[1].grid(True)
-    ax[1].plot(displacements_projected_raw.samples_time[:, 10000], 'b-')
-    ax[1].plot(displacements_projected_interpolated.samples_time[:, 10000], 'r-x')
+    # ax[1].grid(True)
+    # ax[1].plot(displacements_projected_raw.samples_time[:, 10000], 'b-')
+    # ax[1].plot(displacements_projected_interpolated.samples_time[:, 10000], 'r-x')
 
-    ax[2].grid(True)
-    ax[2].plot(strains_projected_raw.samples_time[:, 10000], 'b-')
-    ax[2].plot(strains_projected_interpolated.samples_time[:, 10000], 'r-x')
-    fig.show()
+    # ax[2].grid(True)
+    # ax[2].plot(strains_projected_raw.samples_time[:, 10000], 'b-')
+    # ax[2].plot(strains_projected_interpolated.samples_time[:, 10000], 'r-x')
+    # fig.show()
 
-    import pdb
-    pdb.set_trace()
+    # import pdb
+    # pdb.set_trace()
 
-    assert np.allclose(perturbation_interpolated.strains, perturbation_raw.strains), f"Synthesised and interpolated earthquake strains must match, but didn't"
+    # assert np.allclose(perturbation_interpolated.strains, perturbation_raw.strains), f"Synthesised and interpolated earthquake strains must match, but didn't"
 
 def test_intervals():
-    path = Path(*zip(*path_coordinates)).interpolated(parameters.getfloat('EARTHQUAKE', 'step_size_dense'))
+    path = Path(*zip(*path_coordinates)).interpolated(parameters.getfloat('EARTHQUAKE', 'step_length_dense'))
     earthquake = Earthquake(parameters)
 
-    perturbations = earthquake(
+    perturbation = earthquake(
             path,
             None,
-            [0, 60],
             1,
             parameters.getint('EARTHQUAKE', 'batch_size_dense'),
             parameters.getint('EARTHQUAKE', 'worker_count'),
             parameters.getfloat('EARTHQUAKE', 'request_delay')
         )
 
-    assert len(perturbations) == 2, f"Requested perturbations at two intervals, but received only one perturbation in return"
-    for index, perturbation in enumerate(perturbations):
-        assert perturbation.duration == 1, f"Requested perturbations at 1-second intervals, but perturbation {index + 1} lasted {perturbation.duration}"
-    assert np.allclose(perturbations[0].samples_time, perturbations[1].samples_time), f"Two different intervals yielded identical perturbations"
-    assert perturbations[0].start_time == 0, f"Perturbation 1 was requested to start at 0s, but started at {perturbations[0].start_time}s"
-    assert perturbations[1].start_time == 60, f"Perturbation 2 was requested to start at 60s, but started at {perturbations[1].start_time}s"
+    assert perturbation.duration == 1, f"Requested perturbation for 1 second, but it lasted {perturbation.duration}"
+    assert perturbation.start_time == 0, f"Perturbation should start at 0s, but started at {perturbation.start_time} s"

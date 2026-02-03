@@ -6,7 +6,7 @@ from .constellation import Constellation, BPSK, QPSK, PSK8, QAM4, QAM16, QAM64
 from .drift import Drift
 from .earthquake import Earthquake
 from .fibre_coarse_step import FibreCoarseStep
-from .fibre_marcuse import FibreMarcuse
+from .fibre_cnlse import FibreCNLSE
 from .fibre import Fibre
 from .path import Path
 from .perturbation_event import PerturbationEvent

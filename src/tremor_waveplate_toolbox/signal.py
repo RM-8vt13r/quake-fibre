@@ -30,7 +30,7 @@ class Signal:
 
         Inputs:
         - samples [np.ndarray] or [cp.ndarray]: signal samples, shape [...,S,*C] with arbitrary dimensions ..., sample count S, and component counts *C (e.g. 2 polarisations, 3 seismograms, [2, 2] matrix elements, etc).
-        - sample_rate [float]: the sample frequency in Hz.
+        - sample_rate: sample rate in samples per second.
         - sample_axis [int]: the index of axis S in the shape of samples
         - domain [Domain]: domain (time or frequency) in which samples is given.
         - carrier_wavelength [float]: carrier wavelength in nm; inf if the signal is not modulated.
@@ -135,6 +135,28 @@ class Signal:
             case _:
                 raise ValueError(f"device must be Device.CPU or Device.CUDA, but was {device}")
     
+    def invite_array(self, array: np.ndarray):
+        """
+        Move an array into the same memory device as this Signal.
+
+        Inputs:
+        - array [np.ndarray, cp.ndarray, list, tuple]: the array to move to the same device as this Signal
+
+        Outputs:
+        - [np.ndarray, cp.ndarray]: the moved array
+        """
+        assert isinstance(array, (np.ndarray, list, tuple)) or ('cupy' in sys.modules and isinstance(array, cp.ndarray)), f"array must be a list, tuple, np.ndarray, or cp.ndarray, but was a {type(array)}"
+
+        if 'cupy' in sys.modules and self.device == Device.CPU and isinstance(array, cp.ndarray):
+            # Copy array from GPU to CPU memory
+            return array.get()
+
+        # Three remaining situations:
+        # 1) array is not an array -> convert it to one
+        # 2) signal is on GPU -> copy array over from CPU or another GPU
+        # 3) CUDA is not enabled -> everything is on CPU already, but may need to be converted from list to array
+        return self.xp.array(array)
+
     @property
     def device(self) -> Device:
         """
@@ -345,7 +367,7 @@ class Signal:
         """
         [float] entire signal duration in s
         """
-        return (self.shape[self.sample_axis] - 1) * self.sample_time
+        return self.shape[self.sample_axis] * self.sample_time
 
     @duration.setter
     def duration(self, value):
@@ -397,6 +419,17 @@ class Signal:
     @shape.setter
     def shape(self, value):
         raise AttributeError(f"shape cannot be set directly; set samples_time or samples_frequency instead")
+
+    @property
+    def sample_count(self) -> int:
+        """
+        [int] The number of samples along the time/frequency axis.
+        """
+        return self.shape[self.sample_axis_negative]
+
+    @sample_count.setter
+    def sample_count(self, value):
+        raise AttributeError(f"sample_count cannot be set directly; set samples_time or samples_frequency instead")
 
     @property
     def energy(self) -> np.ndarray:

@@ -13,6 +13,7 @@ import scipy as sp
 
 from .constants import Domain
 from .signal import Signal
+from .utils import rotation_matrix
 
 class Perturbation(Signal):
     def __init__(self,
@@ -40,17 +41,18 @@ class Perturbation(Signal):
         self._perturbation_presence.append(strains is not None)
         if self._perturbation_presence[0]:
             assert len(strains.shape) == 2, f"strains must have shape [K, T], but had shape {strains.shape}"
-            samples = np.zeros(shape = (*strains.shape, 2), dtype = float)
+            samples = np.zeros(shape = (*strains.shape, 6), dtype = float)
             samples[:, :, 0] = strains
 
         self._perturbation_presence.append(twists is not None)
         if self._perturbation_presence[1]:
             assert len(twists.shape) == 2, f"twists must have shape [K, T], but had shape {twists.shape}"
             if samples is None:
-                samples = np.zeros(shape = (*twists.shape, 2), dtype = float)
+                samples = np.zeros(shape = (*twists.shape, 6), dtype = float)
             else:
                 assert twists.shape[0] == samples.shape[0], f"twists must have shape [K, T] ({samples.shape[:2]}), but had shape {twists.shape}"
-            samples[:, :, 1] = twists
+            samples[:, :, 1]  = twists
+            samples[:, :, 2:] = rotation_matrix(twists).reshape((*samples.shape[:2], 4))
 
         assert np.any(self._perturbation_presence), "Cannot create an empty perturbation signal"
 
@@ -95,3 +97,14 @@ class Perturbation(Signal):
     @twists.setter
     def twists(self, value):
         raise AttributeError("Cannot set twists after creating the Perturbation; make a new Perturbation instead")
+
+    @property
+    def twists_rotation_matrices(self):
+        """
+        [np.ndarray, cp.ndarray] The rotation matrices corresponding to twists, shape [K, T, 2, 2] where K is the number of fibre steps, T the number of perturbation time steps, and the last two dimensions contain the matrices.
+        """
+        return self.samples_time[:, :, 2:].reshape((*self.shape[:2], 2, 2)) if self._perturbation_presence[1] else None
+
+    @twists_rotation_matrices.setter
+    def twists_rotation_matrices(self, value):
+        raise AttributeError("Cannot set twists_rotation_matrices after creating the Perturbation; make a new Perturbation instead")

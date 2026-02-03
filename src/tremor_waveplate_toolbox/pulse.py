@@ -77,9 +77,6 @@ class Pulse(ABC):
             carrier_wavelength = signal.carrier_wavelength
         )
 
-    def modulate_time(self, signal: Signal) -> Signal:
-        raise NotImplementedError()
-
     @abstractmethod
     def pulse_time(self, time: np.ndarray) -> np.ndarray:
         """
@@ -233,7 +230,7 @@ class Square(Pulse):
         Inputs:
         - symbol_rate [float]: the symbol rate in Hz
         """
-        super().__init__(symbol_rate, Domain.TIME)
+        super().__init__(symbol_rate, Domain.FREQUENCY)
 
     @override
     def pulse_time(self, time: np.ndarray) -> np.ndarray:
