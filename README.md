@@ -16,7 +16,7 @@ If you want to run the included unit tests and scripts, refer to [Testing and Sc
 
 To use this project:  
 1. Install [Python](https://www.python.org) or [Anaconda](https://www.anaconda.com).  
-2. If you want to use CUDA acceleration, install [CUDA Toolkit](https://developer.nvidia.com/cuda-toolkit).
+2. If you want to use CUDA acceleration, install [CUDA Toolkit](https://developer.nvidia.com/cuda-toolkit) system-wide, or install it locally in step 6.
 3. Open a command line terminal in the directory of your project.  
 4. (Recommended) create a new virtual environment:  
    - [venv](https://docs.python.org/3/library/venv.html):  
@@ -42,14 +42,14 @@ To use this project:
       ```bat
       pip install "tremor-waveplate-toolbox @ git+https://gitlab.tue.nl/r.m.butler/tremor-waveplate-toolbox.git"
       ```
-      If you want to use CUDA acceleration, use `tremor-waveplate-toolbox[cuda..x]` instead, where you replace `..` with `11`, `12` or `13` depending on your CUDA Toolkit installation.
-
+      
    b. ..SSH.
       This will require you to [setup a personal SSH key pair](https://docs.gitlab.com/user/ssh/) beforehand.
       ```bat
       pip install "tremor-waveplate-toolbox @ git+ssh://git@gitlab.tue.nl/r.m.butler/tremor-waveplate-toolbox.git"
       ```
-      If you want to use CUDA acceleration, use `tremor-waveplate-toolbox[cuda..x]` instead, where you replace `..` with `11`, `12` or `13` depending on your CUDA Toolkit installation.
+      If you want to use CUDA acceleration and installed CUDA system-wide in step 2, use `tremor-waveplate-toolbox[cuda..x]` instead, where you replace `..` with `11`, `12` or `13` depending on your CUDA Toolkit installation.  
+      If you want to install CUDA locally within the environment, use `tremor-waveplate-toolbox[cuda..x-local]`, and make sure to `import` `tremor-waveplate-toolbox` before `cupy` in any scripts.  
 
 7. All done!
 

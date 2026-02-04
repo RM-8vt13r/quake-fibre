@@ -59,17 +59,18 @@ cuda13x = [
     "cupy-cuda13x",
 ]
 
-#cuda13x-local = [
-#    "cupy-cuda13x",
-#    "cuda-toolkit[cudart,nvrtc,cublas,cufft,cusolver,cusparse,curand]>=13.0,<14.0"
-#]
+cuda13x-local = [
+    "cupy-cuda13x",
+    "cuda-toolkit[cudart,nvrtc,cublas,cufft,cusolver,cusparse,curand]>=13.0,<14.0"
+]
 
 cuda12x = [
     "cupy-cuda12x"
 ]
 
 cuda12x-local = [
-    "cupy-cuda12x[ctk]"
+    "cupy-cuda12x",
+    "cuda-toolkit[cudart,nvrtc,cublas,cufft,cusolver,cusparse,curand]>=12.0,<13.0"
 ]
 
 cuda11x = [
@@ -77,7 +78,8 @@ cuda11x = [
 ]
 
 cuda11x-local = [
-    "cupy-cuda11x[ctk]"
+    "cupy-cuda11x",
+    "cuda-toolkit[cudart,nvrtc,cublas,cufft,cusolver,cusparse,curand]>=11.0,<12.0"
 ]
 
 testing = [
