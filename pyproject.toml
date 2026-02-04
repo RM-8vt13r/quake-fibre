@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "tremor-waveplate-toolbox"
-version = "2026.02.03"
+version = "2026.02.04"
 description = "Dual-polarisation transmission through an optical fibre undergoing earthquake perturbations."
 readme = {file = "README.md", content-type = "text/markdown"}
 
@@ -56,15 +56,28 @@ Repository = "https://gitlab.tue.nl/r.m.butler/tremor-waveplate-toolbox"
 
 [project.optional-dependencies]
 cuda13x = [
-    "cupy-cuda13x"
+    "cupy-cuda13x",
 ]
+
+#cuda13x-local = [
+#    "cupy-cuda13x",
+#    "cuda-toolkit[cudart,nvrtc,cublas,cufft,cusolver,cusparse,curand]>=13.0,<14.0"
+#]
 
 cuda12x = [
     "cupy-cuda12x"
 ]
 
+cuda12x-local = [
+    "cupy-cuda12x[ctk]"
+]
+
 cuda11x = [
-    "cupy-cuda11x"
+    "cupy-cuda11x",
+]
+
+cuda11x-local = [
+    "cupy-cuda11x[ctk]"
 ]
 
 testing = [
