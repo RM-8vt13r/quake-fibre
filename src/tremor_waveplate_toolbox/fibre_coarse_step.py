@@ -73,9 +73,9 @@ class FibreCoarseStep(Fibre):
 
     @override
     def _prepare_steps_iterable_arrays(self, signal, step_start, step_stop):
-        step_lengths, differential_group_delays = super()._prepare_steps_iterable_arrays(signal, step_start, step_stop)
+        super_iterable_arrays = super()._prepare_steps_iterable_arrays(signal, step_start, step_stop)
         scramblers = signal.invite_array(self.scramblers[step_start:step_stop, :, None]) # [S, R, 1, 2, 2]
-        return step_lengths, differential_group_delays, scramblers
+        return (*super_iterable_arrays, scramblers)
 
     def _perturb_birefringence_quantities(self, signal, step_index, perturbations, perturbation_sample_masks, perturbation_sample_indices, *birefringence_quantities):
         pass

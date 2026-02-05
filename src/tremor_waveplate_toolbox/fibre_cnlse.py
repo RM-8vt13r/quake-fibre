@@ -73,10 +73,10 @@ class FibreCNLSE(Fibre):
 
     @override
     def _prepare_steps_iterable_arrays(self, signal, step_start, step_stop):
-        step_lengths, differential_group_delays = super()._prepare_steps_iterable_arrays(signal, step_start, step_stop)
+        super_iterable_arrays = super()._prepare_steps_iterable_arrays(signal, step_start, step_stop)
         differential_phase_shifts = signal.invite_array(self.differential_phase_shifts[step_start:step_stop, :, None, None]) # [K, R, 1, 1]
         major_rotation_matrices   = signal.invite_array(rotation_matrix(self.major_angles[step_start:step_stop, :, None])) # [K, R, 1, 2, 2]
-        return step_lengths, differential_group_delays, differential_phase_shifts, major_rotation_matrices
+        return (*super_iterable_arrays, differential_phase_shifts, major_rotation_matrices)
 
     @override
     def _perturb_birefringence_quantities(self, signal, step_index, perturbations, perturbations_sample_masks, perturbations_sample_indices, differential_group_delay, differential_phase_shift, major_rotation_matrix):

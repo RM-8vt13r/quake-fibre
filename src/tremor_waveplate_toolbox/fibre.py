@@ -164,12 +164,14 @@ class Fibre(ABC):
         transmission_start_times = self._prepare_transmission_start_times(signal, transmission_start_times)
         perturbations            = self._prepare_perturbations(signal, perturbations)
         steps_iterable           = self._prepare_steps_iterable(signal, perturbations, step_start, step_stop)
-
+        group_velocity           = self._prepare_group_velocity(signal)
+        
         linear_exponent = signal.xp.zeros(shape = (self.realisation_count, max(len(transmission_start_times), signal.shape[1]), *signal.shape[2:]), dtype = complex) # [R, B, S, P]
 
         for step_index, step_values in enumerate(steps_iterable):
             step_length = step_values[0]
-            birefringence_quantities = step_values[1:]
+            step_centre_position = step_values[1]
+            birefringence_quantities = step_values[2:]
             linear_exponent[:] = 0
 
             if self.chromatic_dispersion != 0.:
@@ -177,7 +179,7 @@ class Fibre(ABC):
 
             if self.polarisation_mode_dispersion != 0.:
                 if len(perturbations):
-                    perturbations_sample_masks, perturbations_sample_indices = self._step_perturbations_indices(signal, perturbations, transmission_start_times, step_index)
+                    perturbations_sample_masks, perturbations_sample_indices = self._step_perturbations_indices(signal, perturbations, transmission_start_times, step_centre_position, group_velocity)
                     birefringence_quantities = self._perturb_birefringence_quantities(signal, step_index, perturbations, perturbations_sample_masks, perturbations_sample_indices, *birefringence_quantities)
                 
                 signal = self._prepare_birefringence(signal, *birefringence_quantities)
@@ -327,14 +329,18 @@ class Fibre(ABC):
 
         return steps_iterable
 
+    def _prepare_group_velocity(self, signal):
+        return signal.invite_array(self.group_velocity(signal.carrier_wavelength))
+
     @abstractmethod
     def _prepare_steps_iterable_arrays(self, signal, step_start, step_stop):
         step_lengths              = signal.invite_array(self.step_path.lengths[step_start:step_stop])
+        step_centre_positions     = signal.invite_array(self.step_path.centre_positions[step_start:step_stop])
         differential_group_delays = signal.invite_array(self.differential_group_delays[step_start:step_stop, :, None, None]) # [S, R, 1, 1]
-        return step_lengths, differential_group_delays
+        return step_lengths, step_centre_positions, differential_group_delays
 
-    def _step_perturbations_indices(self, signal, perturbations, transmission_start_times, step_index):
-        perturbations_sample_times      = transmission_start_times + self.step_path.centre_positions[step_index] / self.group_velocity(signal.carrier_wavelength) # [B,]
+    def _step_perturbations_indices(self, signal, perturbations, transmission_start_times, step_centre_position, group_velocity):
+        perturbations_sample_times      = transmission_start_times + step_centre_position / group_velocity # [B,]
         perturbations_sample_masks      = signal.xp.zeros(shape = (len(perturbations), len(perturbations_sample_times)), dtype = bool) # [P, B]
         perturbations_sample_indices    = signal.xp.zeros_like(perturbations_sample_masks, dtype = int) # [P, B]
         for index, perturbation in enumerate(perturbations):

@@ -145,7 +145,7 @@ class Signal:
         Outputs:
         - [np.ndarray, cp.ndarray]: the moved array
         """
-        assert isinstance(array, (np.ndarray, list, tuple)) or ('cupy' in sys.modules and isinstance(array, cp.ndarray)), f"array must be a list, tuple, np.ndarray, or cp.ndarray, but was a {type(array)}"
+        assert isinstance(array, (np.ndarray, list, tuple, int, float, complex, np.number)) or ('cupy' in sys.modules and isinstance(array, (cp.ndarray, cp.number))), f"array must be a list, tuple, np.ndarray, or cp.ndarray, but was a {type(array)}"
 
         if 'cupy' in sys.modules and self.device == Device.CPU and isinstance(array, cp.ndarray):
             # Copy array from GPU to CPU memory
