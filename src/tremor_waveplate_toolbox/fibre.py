@@ -305,7 +305,7 @@ class Fibre(ABC):
 
         assert len(transmission_start_times.shape) == 1, f"transmission_start_times must have shape [T,], but had shape {transmission_start_times.shape}"
         if len(transmission_start_times > 1):
-            assert signal.shape[1] in (1, len(transmission_start_times)), f"If transmission_start_times has shape [T > 1,] signal must have batch size 1, but this was {signal.shape[1]}"
+            assert signal.shape[1] in (1, len(transmission_start_times)), f"If transmission_start_times has shape [T > 1,] signal must have batch size 1 or T ({len(transmission_start_times)}), but this was {signal.shape[1]}"
         
         return transmission_start_times
 
