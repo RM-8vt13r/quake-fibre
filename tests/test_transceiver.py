@@ -54,3 +54,9 @@ def test_receiver():
     symbols_received_2 = receiver_2(signal)
     assert np.all(symbols_received_2.power_W <= 2), f"Received symbols should have power below 2 (unit power per polarisation), but had power {symbols_received_2.power_W}"
     assert not np.allclose(symbols_received_2.samples_time, symbols.samples_time), f"Received symbols with non-matched filter should not be the same as the transmitted symbols, but were"
+
+    signal = transmitter.transmit_continuous([10, 0], int(parameters.getfloat('SIGNAL', 'symbol_count')), )
+    symbols_received = receiver.receive_continuous(signal)
+    assert symbols_received.shape == (1, 1, int(parameters.getfloat('SIGNAL', 'symbol_count')), 2), f"Received continuous-wave symbols shape should be [R (1), B (1), S ({int(parameters.getfloat('SIGNAL', 'symbol_count'))}), P (2)], but was {signal.shape}"
+    assert np.allclose(symbols_received.power_W, 1), f"Received continuous-wave symbols should have a power of 1 W, but this was {symbols_received.power_W} W"
+    
