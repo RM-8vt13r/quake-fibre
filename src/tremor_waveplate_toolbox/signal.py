@@ -410,6 +410,50 @@ class Signal:
         raise AttributeError(f"frequency_angular_digital cannot be set directly; set sample_time or sample_rate instead")
 
     @property
+    def sample_bandwidth(self):
+        """
+        [float] The bandwidth in Hz of a single Signal frequency sample.
+        """
+        return self.bandwidth / self.sample_count
+
+    @sample_bandwidth.setter
+    def sample_bandwidth(self, value):
+        raise AttributeError(f"sample_bandwidth cannot be set directly; set sample_time or sample_rate and samples_time or samples_frequency instead")
+
+    @property
+    def sample_bandwidth_angular(self):
+        """
+        [float] The bandwidth in Rad/s of a single Signal frequency sample.
+        """
+        return 2 * np.pi * self.sample_bandwidth
+
+    @sample_bandwidth_angular.setter
+    def sample_bandwidth_angular(self, value):
+        raise AttributeError(f"sample_bandwidth_angular cannot be set directly; set sample_time or sample_rate and samples_time or samples_frequency instead")
+        
+    @property
+    def bandwidth(self):
+        """
+        [float] The bandwidth in Hz that this Signal occupies.
+        """
+        return self.sample_rate
+
+    @bandwidth.setter
+    def bandwidth(self, value):
+        raise AttributeError(f"bandwidth cannot be set directly; set sample_time or sample_rate and samples instead")
+
+    @property
+    def bandwidth_angular(self):
+        """
+        [float] The bandwidth in Rad/s that this Signal occupies.
+        """
+        return 2 * np.pi * self.bandwidth
+
+    @bandwidth_angular.setter
+    def bandwidth_angular(self, value):
+        raise AttributeError(f"bandwidth_angular cannot be set directly; set sample_time or sample_rate and samples instead")
+
+    @property
     def shape(self) -> tuple:
         """
         [tuple] Shape of the signal samples

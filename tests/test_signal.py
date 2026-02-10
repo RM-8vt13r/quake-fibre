@@ -46,6 +46,8 @@ def test_signal():
         assert signal.domain == Domain.TIME, f"{device} signal did not switch to time domain properly"
         assert not signal.xp.allclose(samples_time2, samples_frequency), f"{device} signal did not change samples on switch to time domain"
         assert signal.xp.allclose(samples_time1, samples_time2), f"{device} signal time-domain samples do not match samples before FFT pair"
+        assert signal.xp.allclose(signal.xp.diff(signal.xp.fft.fftshift(signal.frequency)), signal.sample_bandwidth), f"Signal sample_bandwidth ({signal.sample_bandwidth}Hz) does not match frequency sample spacing ({np.diff(signal.xp.fft.fftfreq(signal.frequency))})"
+        assert signal.xp.isclose(signal.xp.fft.fftshift(signal.frequency)[-1] - signal.xp.fft.fftshift(signal.frequency)[0] + signal.sample_bandwidth, signal.bandwidth), f"Signal frequency samples cover {signal.xp.fft.fftshift(signal.frequency)[-1] - signal.xp.fft.fftshift(signal.frequency)[0] + signal.sample_bandwidth}Hz of bandwidth, but signal.bandwidth returns {signal.bandwidth}Hz"
 
         signal2 = signal.copy()
         assert signal == signal2, f"{device} signal copying was not successful"
