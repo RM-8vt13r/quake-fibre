@@ -10,7 +10,7 @@ try:
 except:
     print("cupy not available; skipping all CUDA tests..")
 
-from tremor_waveplate_toolbox import Transmitter, Domain, Device
+from tremor_waveplate_toolbox import Transceiver, Domain, Device
 
 parameters = ConfigParser()
 parameters["TRANSCEIVER"] = {
@@ -19,7 +19,7 @@ parameters["TRANSCEIVER"] = {
     "baud_rate": "1e6",       # Baud rate in symbols / s
     "pulse": "RRCOS",         # Pulseshape, can be SINC or RRCOS, or define your own using the Pulse class
     "pulse_parameter": "0.5", # Parameter to pass to the pulse constructor. For a RRCOS pulse, this is the rolloff factor
-    "upsample_factor": "4"    # Samples per symbol
+    "sample_factor": "4"      # Samples per symbol
 }
 
 parameters["SIGNAL"] = {
@@ -27,8 +27,8 @@ parameters["SIGNAL"] = {
 }
 
 def test_signal():
-    transmitter = Transmitter(parameters)
-    _, signal = transmitter.transmit_random(1, int(parameters.getfloat("SIGNAL", "symbol_count")))
+    transceiver = Transceiver(parameters)
+    _, signal = transceiver.transmit_random_symbols(1, int(parameters.getfloat("SIGNAL", "symbol_count")))
 
     for device in (Device.CPU, Device.CUDA):
         if device == Device.CUDA and 'cupy' not in sys.modules: return

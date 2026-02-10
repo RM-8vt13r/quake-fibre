@@ -40,8 +40,7 @@ from .path import Path
 from .perturbation_event import PerturbationEvent
 from .perturbation import Perturbation
 from .pulse import Pulse, Sinc, SINC, RootRaisedCosine, RRCOS, Square, SQUARE
-from .receiver import Receiver
 from .scramblers import Scramblers
 from .signal import Signal
-from .transmitter import Transmitter
+from .transceiver import Transceiver
 from .utils import rotation_matrix, phase_matrix

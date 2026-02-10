@@ -13,7 +13,7 @@ except:
 import numpy as np
 import scipy as sp
 
-from tremor_waveplate_toolbox import FibreCoarseStep, FibreCNLSE, Transmitter, Device, Signal, Perturbation
+from tremor_waveplate_toolbox import FibreCoarseStep, FibreCNLSE, Transceiver, Device, Signal, Perturbation
 
 parameters = ConfigParser()
 parameters['TRANSCEIVER'] = {
@@ -22,7 +22,7 @@ parameters['TRANSCEIVER'] = {
     'baud_rate': '40e9',      # Baud rate in symbols / s
     'pulse': 'RRCOS',         # Pulseshape, can be SINC or RRCOS, or define your own using the Pulse class
     'pulse_parameter': '0.5', # Parameter to pass to the pulse constructor. For a RRCOS pulse, this is the rolloff factor
-    'upsample_factor': '4'    # Samples per symbol
+    'sample_factor': '4'      # Samples per symbol
 }
 
 parameters['FIBRE'] = {
@@ -70,8 +70,8 @@ def test_fibre_propagation():
         assert np.all(channel.step_path.lengths == parameters.getfloat('FIBRE', 'step_length')), f"{type(channel)} steps should have length step_length, but didn't"
         assert channel.step_path.edge_count == parameters.getint('FIBRE', 'step_count'), f"{type(channel)} should have {parameters.getint('FIBRE', 'step_count')} steps, but had {channel.step_path.edge_count}"
 
-        transmitter = Transmitter(parameters)
-        _, signal = transmitter.transmit_random(1, int(parameters.getfloat("SIGNAL", "symbol_count")))
+        transceiver = Transceiver(parameters)
+        _, signal = transceiver.transmit_random_symbols(1, int(parameters.getfloat("SIGNAL", "symbol_count")))
 
         # Test signal propagation and Jones matrix construction
         propagated_signal = channel(signal)
@@ -204,8 +204,8 @@ def test_fibre_path():
         except AttributeError:
             raise AssertionError("Channel should contain a path and a step_path with coordinates, but didn't")
 
-        transmitter = Transmitter(parameters)
-        _, signal = transmitter.transmit_random(1, int(parameters.getfloat("SIGNAL", "symbol_count")))
+        transceiver = Transceiver(parameters)
+        _, signal = transceiver.transmit_random_symbols(1, int(parameters.getfloat("SIGNAL", "symbol_count")))
 
         if 'cupy' in sys.modules: signal.to_device(Device.CUDA)
 

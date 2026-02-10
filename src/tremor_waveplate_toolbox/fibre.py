@@ -313,6 +313,12 @@ class Fibre(ABC):
         steps_iterable_arrays = self._prepare_steps_iterable_arrays(signal, step_start, step_stop)
         steps_iterable = zip(*steps_iterable_arrays)
 
+        if step_start is not None:
+            step_start = max(step_start, 0)
+
+        if step_stop is not None:
+            step_stop = min(step_stop, self.step_path.edge_count)
+
         desc_string = "Propagating signal "
         if step_start is not None: desc_string += f"from fibre step {step_start + 1} "
         if step_stop is not None: desc_string += f"until step {step_stop} of {self.step_path.edge_count} "
