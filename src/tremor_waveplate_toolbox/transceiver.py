@@ -4,12 +4,17 @@ A class to transmit optical signals
 
 from configparser import ConfigParser
 import json
+import logging
 
 import numpy as np
 
 from .signal import Signal
+from .constants import Gain
+from .utilities import dB2linear, linear2dB
 from . import constellation as const
 from . import pulse
+
+logger = logging.getLogger()
 
 class Transceiver:
     """
@@ -21,23 +26,30 @@ class Transceiver:
         """
         Create a new Transmitter.
 
-        Required entries in parameters['TRANSCEIVER']:
+        Required and optional entries in parameters['TRANSCEIVER']:
         - constellation [str]: 'BPSK', 'PSK8', 'QPSK', 'QAM4', 'QAM16', 'QAM64', or a string with a list of complex symbols
         - power [float]: Transmission power in dBm
-        - baud_rate [float]: symbol rate in Hz
-        - pulse [str]: 'SINC' or 'RRCOS' for sinc or root-raised cosine pulses
-        - pulse_parameter [object]: any parameter(s) to define the pulse, such as rolloff factor
-        - filter [str]: 'SINC' or 'RRCOS' for sinc or root-raised cosine antialiasing filters
-        - filter_parameter [object]: any parameter(s) to define the filter, such as rolloff factor
+        - symbol_rate [float]: symbol rate in Hz
+        - pulse [str]: (optional) 'SINC' or 'RRCOS' for sinc or root-raised cosine pulses
+        - pulse_parameter [object]: (optional) any parameter(s) to define the pulse, such as rolloff factor
+        - filter [str]: (optional) 'SINC' or 'RRCOS' for sinc or root-raised cosine antialiasing filters
+        - filter_parameter [object]: (optional) any parameter(s) to define the filter, such as rolloff factor
         - sample_factor [int]: samples per symbol
         """
-        try:
-            self.constellation = json.loads(parameters.get('TRANSCEIVER', 'constellation'))
-        except:
-            self.constellation = getattr(const, parameters.get('TRANSCEIVER', 'constellation'))
+        if 'constellation' in parameters['TRANSCEIVER']:
+            try:
+                self.constellation = json.loads(parameters.get('TRANSCEIVER', 'constellation'))
+            except:
+                self.constellation = getattr(const, parameters.get('TRANSCEIVER', 'constellation'))
+        else:
+            self.constellation = None
 
-        self.pulse  = self._construct_pulse('pulse', parameters)
-        self.filter = self._construct_pulse('filter', parameters)
+        self._pulse  = None
+        self._filter = None
+        self.symbol_rate = parameters.getfloat('TRANSCEIVER', 'symbol_rate')
+
+        self.pulse   = self._construct_pulse('pulse', parameters)
+        self.filter  = self._construct_pulse('filter', parameters)
         if self.filter is None and self.pulse is not None:
             self.filter = self.pulse
 
@@ -47,12 +59,12 @@ class Transceiver:
     def _construct_pulse(self, pulse_name: str, parameters: ConfigParser):
         if pulse_name in parameters['TRANSCEIVER']:
             constructor = getattr(pulse, parameters.get('TRANSCEIVER', pulse_name).upper())
-            constructor_arguments = [parameters.getfloat('TRANSCEIVER', 'baud_rate')]
+            constructor_arguments = [parameters.getfloat('TRANSCEIVER', 'symbol_rate')]
             if f'{pulse_name}_parameter' in parameters['TRANSCEIVER']:
                 constructor_arguments.append(parameters.getfloat('TRANSCEIVER', f'{pulse_name}_parameter'))
             
             return constructor(*constructor_arguments)
-
+            
         return None
         
     def transmit_continuous(self, symbol: np.ndarray, symbol_count: int, carrier_wavelength: float = 1550.) -> Signal:
@@ -79,7 +91,7 @@ class Transceiver:
         # Generate continuous-wave signal
         signal = Signal(
             samples = np.full(shape = (1, 1, symbol_count * self.sample_factor, 2), fill_value = symbol, dtype = complex),
-            sample_rate = self.pulse.symbol_rate * self.sample_factor,
+            sample_rate = self.symbol_rate * self.sample_factor,
             carrier_wavelength = carrier_wavelength
         )
 
@@ -100,18 +112,18 @@ class Transceiver:
         - [Signal]: modulated symbols as a Signal, shape [R,B,S,P]
         - [Signal]: the output signal, shape [R,B,U*S,P] where R = 1 is fibre realisations and U is the upsample factor (samples per symbol).
         """
-        assert self.pulse is not None, f"Cannot transmit symbols when no pulseshape was defined"
+        assert self.pulse is not None, f"Cannot transmit symbols if no pulseshape was defined"
         assert len(symbols.shape) == 3 and symbols.shape[-1] == 2, f"symbols should have shape [B,S,P] with P = 2, but had shape {symbols.shape}"
 
         symbols = Signal(
             samples = symbols[None].astype(complex),
-            sample_rate = self.pulse.symbol_rate
+            sample_rate = self.symbol_rate
         )
 
         # Upsample to sample space
         samples = Signal(
             samples = np.zeros([*symbols.shape[:-2], self.sample_factor * symbols.shape[-2], symbols.shape[-1]], dtype = complex),
-            sample_rate = self.sample_factor * self.pulse.symbol_rate,
+            sample_rate = self.sample_factor * self.symbol_rate,
             carrier_wavelength = carrier_wavelength
         )
         samples.samples_time[..., ::self.sample_factor, :] = symbols.samples_time
@@ -137,6 +149,8 @@ class Transceiver:
         - [Signal]: modulated symbols as a Signal, shape [R,B,S,P] with number of fibre realisations R = 1 and number of orthogonal polarisations P = 2
         - [Signal]: the output signal, shape [R,B,U*S,2]
         """
+        assert self.constellation is not None, f"Cannot draw symbols if constellation was defined"
+
         # Sample symbol array from constellation
         symbols = self.constellation((batch_size, symbol_count, 2))
         return self.transmit_symbols(symbols, carrier_wavelength)
@@ -154,7 +168,7 @@ class Transceiver:
         # Downsample to symbol space
         symbols = Signal(
             samples = samples.samples_time[..., ::self.sample_factor, :].copy(),
-            sample_rate = self.filter.symbol_rate
+            sample_rate = self.symbol_rate
         )
 
         # Scale back to transmission power after downsampling -> scale to unit power -> multiply by 2 for dual-polarisation transmission
@@ -186,6 +200,10 @@ class Transceiver:
 
     @constellation.setter
     def constellation(self, value: const.Constellation):
+        if value is None:
+            self._constellation = None
+            return
+
         if isinstance(value, (const.Constellation)):
             self._constellation = value
             return
@@ -206,6 +224,11 @@ class Transceiver:
     @pulse.setter
     def pulse(self, value):
         assert value is None or isinstance(value, pulse.Pulse), f"pulse must be a Pulse, but was a {type(value)}"
+
+        if value is not None and value.symbol_rate != self.symbol_rate:
+            logger.warning(f"New transceiver pulse implicitely changed symbol rate from {self.symbol_rate} to {value.symbol_rate} symbols per second")
+            self.symbol_rate = value.symbol_rate
+
         self._pulse = value
 
     @property
@@ -218,7 +241,38 @@ class Transceiver:
     @filter.setter
     def filter(self, value):
         assert value is None or isinstance(value, pulse.Pulse), f"filter must be a Pulse, but was a {type(value)}"
+
+        if value is not None and value.symbol_rate != self.symbol_rate:
+            logger.warning(f"New transceiver filter implicitely changed symbol rate from {self.symbol_rate} to {value.symbol_rate} symbols per second")
+            self.symbol_rate = value.symbol_rate
+
         self._filter = value
+
+    @property
+    def symbol_rate(self):
+        """
+        [float] The rate with which symbols are transmitted in symbols per second.
+        """
+        if self.pulse is not None:
+            return self.pulse.symbol_rate
+
+        if self.filter is not None:
+            return self.filter.symbol_rate
+
+        return self._symbol_rate
+
+    @symbol_rate.setter
+    def symbol_rate(self, value):
+        assert isinstance(value, (int, float, np.integer, np.floating)), f"symbol_rate must be a float, but was a {type(value)}"
+        assert value > 0, f"symbol_rate must be >0, but was {value}"
+        
+        if self.pulse is not None:
+            self.pulse.symbol_rate = value
+
+        if self.filter is not None:
+            self.filter.symbol_rate = value
+
+        self._symbol_rate = value
 
     @property
     def power_dBm(self) -> float:
@@ -236,12 +290,12 @@ class Transceiver:
         """
         [float] the transmission signal power in W.
         """
-        return 0.001 * 10 ** (self.power_dBm / 10)
+        return 0.001 * dB2linear(self.power_dBm, Gain.POWER)
 
     @power_W.setter
     def power_W(self, value):
         assert value > 0, f"Power in W must be positive, but was {value}"
-        self.power_dBm = 10 * np.log10(1000 * value)
+        self.power_dBm = linear2dB(1000 * value, Gain.POWER)
 
     @property
     def sample_factor(self) -> int:

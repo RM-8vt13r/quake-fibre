@@ -5,12 +5,14 @@ import sys
 import logging
 
 import numpy as np
+import scipy as sp
 try:
     import cupy as cp
 except:
     pass
 
-from .constants import Domain, Device
+from .constants import Domain, Device, Gain
+from .utilities import dB2linear, linear2dB
 
 logger = logging.getLogger()
 
@@ -491,19 +493,19 @@ class Signal:
         """
         [np.ndarray, cp.ndarray] Signal power in dBm, shape [...]
         """
-        return 10 * self.xp.log10(1000 * self.power_W)
+        return linear2dB(1000 * self.power_W, Gain.POWER)
 
     @power_dBm.setter
     def power_dBm(self, value):
-        self.power_W = 0.001 * 10 ** (value / 10)
+        self.power_W = 0.001 * dB2linear(value, Gain.POWER)
 
     @property
     def power_W(self) -> float:
         """
         [np.ndarray, cp.ndarray] Signal power in W, shape [...]
         """
-        return self.energy / self.shape[self.sample_axis]
+        return self.energy / self.sample_count
 
     @power_W.setter
     def power_W(self, value):
-        self.energy = value * self.shape[self.sample_axis]
+        self.energy = value * self.sample_count

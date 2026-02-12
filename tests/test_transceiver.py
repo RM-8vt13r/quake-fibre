@@ -12,7 +12,7 @@ parameters = ConfigParser()
 parameters['TRANSCEIVER'] = {
     'constellation': 'QPSK',
     'power': '2',
-    'baud_rate': '1e6',
+    'symbol_rate': '1e6',
     'pulse': 'RRCOS',
     'pulse_parameter': '0.7',
     'filter': 'RRCOS',

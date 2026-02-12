@@ -16,7 +16,7 @@ parameters = ConfigParser()
 parameters["TRANSCEIVER"] = {
     "constellation": "QPSK",  # The symbol constellation to use
     "power": "2",             # Transmission power in dBm
-    "baud_rate": "1e6",       # Baud rate in symbols / s
+    "symbol_rate": "1e6",     # Symbol rate in symbols / s
     "pulse": "RRCOS",         # Pulseshape, can be SINC or RRCOS, or define your own using the Pulse class
     "pulse_parameter": "0.5", # Parameter to pass to the pulse constructor. For a RRCOS pulse, this is the rolloff factor
     "sample_factor": "4"      # Samples per symbol

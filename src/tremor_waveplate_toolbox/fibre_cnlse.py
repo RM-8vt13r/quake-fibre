@@ -14,7 +14,7 @@ except:
 from .fibre import Fibre
 from .signal import Signal
 from .perturbation import Perturbation
-from .utils import rotation_matrix
+from .utilities import rotation_matrix
 from .constants import Device, PAULI_3
 try:
     from .constants import PAULI_3_CUDA

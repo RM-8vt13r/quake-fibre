@@ -22,7 +22,7 @@ parameters['EARTHQUAKE'] = {
     'batch_size_sparse': '6',       # The number of seismograms to request at most simultaneously
     'batch_size_dense': '50',       # The number of seismograms to request at most simultaneously
     'step_length_sparse': '1',      # Distances at which to request seismograms in km; these seismograms are interpolated to all fibre section 
-    'step_length_dense': '0.01',    # Distances at which to request seismograms in km; these seismograms are interpolated to all fibre section 
+    'step_length_dense': '0.1',     # Distances at which to request seismograms in km; these seismograms are interpolated to all fibre section 
     'worker_count': '5',            # Number of threads to request seismograms from Syngine simultaneously, high numbers (>20) might yield a temporary block
     'request_delay': '0.1'          # Minimum delay between filing concurrent seismogram requests (guidelines at https://ds.iris.edu/ds/nodes/dmc/services/usage/)
 }

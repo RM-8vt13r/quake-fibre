@@ -23,7 +23,7 @@ class Path:
             self._latitudes = latitudes
 
             self._lengths = np.array([
-                op.geodetics.base.calc_vincenty_inverse(latitude1, longitude1, latitude2, longitude2)[0] / 1000
+                op.geodetics.base.calc_vincenty_inverse(latitude1, longitude1, latitude2, longitude2, f = 0)[0] / 1000 # f = 0 assumes a perfectly spherical earth. Removing this causes spans to have different lengths.
                 for longitude1, latitude1, longitude2, latitude2 in zip(longitudes[:-1], latitudes[:-1], longitudes[1:], latitudes[1:])
             ])
 
@@ -51,8 +51,7 @@ class Path:
             positions = np.arange(0, self.length, positions)
             positions = np.append(positions, self.length)
 
-        if self.longitudes is None:
-            logger.warning("Interpolating a Path without coordinates")
+        if self._longitudes is None:
             return Path(lengths = np.diff(positions))
 
         longitudes = np.interp(positions, self.positions, self.longitudes)
@@ -113,44 +112,51 @@ class Path:
 
     def __iter__(self):
         """
-        Prepare iteration over this path's coordinates.
+        Prepare iteration over this path's edges.
         """
-        self._coordinate_index = 0
+        self._edge_index = 0
+        return self
 
     def __next__(self):
         """
-        Obtain the next vertex's coordinate (longitude, latitude)
+        Obtain the next edge's subpath
 
         Output:
-        - [np.ndarray] the coordinate
+        - [Path] the subpath
         """
-        if self._coordinate_index >= self.vertex_count:
+        if self._edge_index >= self.edge_count:
             raise StopIteration
-        self._coordinate_index += 1
-        return self.coordinates[self._coordinate_index - 1]
+        self._edge_index += 1
+        return self[self._edge_index - 1]
 
     def __getitem__(self, index):
         """
         Obtain a sub-path
 
         Input:
-        - index [int, slice]: the index or indices of the path vertices to include
+        - index [int, slice]: the index or indices of the path edges to include
 
         Output:
         - [Path] The sliced path
         """
-        if isinstance(index, (int, np.integer)):
-            index = slice(index, index + 1, 1)
-
         if self._longitudes is not None:
+            if isinstance(index, (int, np.integer)):
+                vertex_index = slice(index, index + 2, 1)
+
+            else:
+                vertex_index = slice(index.start, index.stop + 2, index.step)
+
             return Path(
-                    self.longitudes[index],
-                    self.latitudes[index]
+                    self.longitudes[vertex_index],
+                    self.latitudes[vertex_index]
                 )
 
         else:
+            if isinstance(index, (int, np.integer)):
+                edge_index = slice(index, index + 1, 1)
+
             return Path(
-                    lengths = self.lengths[index]
+                    lengths = self.lengths[edge_index]
                 )
 
     def __len__(self):

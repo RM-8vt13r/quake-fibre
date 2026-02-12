@@ -18,7 +18,8 @@ except:
 import obspy as op
 import refractiveindex
 
-from .constants import Device, Domain, ModulusModel
+from .constants import Device, Domain, ModulusModel, Gain
+from .utilities import dB2linear
 from .signal import Signal
 from .perturbation import Perturbation
 from .path import Path
@@ -38,26 +39,32 @@ class Fibre(ABC):
         """
         Instantiate multiple fibre channels for simultaneous propagation.
 
-        Required entries in parameters['FIBRE']:
-        - correlation_length [float]:           correlation length in km.
-        - beat_length [float]:                  beat length in km.
-        - step_length [float]:                  split-step step length in km (the correlation length Lc for the coarse-step model, << Lc for Marcuse's model)
-        - path_coordinates [list]:              list of coordinates (longitude, latitude) along the fibre path.
-        - chromatic_dispersion [float]:         chromatic dispersion parameter in ps^2/km.
-        - nonlinearity [float]:                 nonlinearity parameter in  1/(W km).
-        - attenuation [float]:                  attenuation in dB / km.
-        - polarisation_mode_dispersion [float]: average accumulated differential group delay in ps/(km ^ 0.5); If 0, turns off major axes rotations as well.
-        - realisation_count [int]:              the number of fibre realisations with different distributed polarisation mode dispersion.
-        - photoelasticity [float]:              the fibre photoelasticity.
+        Required and optional entries in parameters['FIBRE']:
+        - correlation_length [float]:           Correlation length in km.
+        - beat_length [float]:                  Beat length in km.
+        - span_length [float]:                  Fibre span length in km, after which an amplifier is added.
+        - steps_per_span [int]:                 Number of split-step steps per fibre span.
+        - path_coordinates [list]:              (Optional) If section_count is not defined, list of coordinates (longitude, latitude) along the fibre path.
+        - span_count [int]:                     (Optional) If path_coordinates is not defined, number of fibre spans.
+        - chromatic_dispersion [float]:         Chromatic dispersion parameter in ps^2/km.
+        - nonlinearity [float]:                 Nonlinearity parameter in  1 / (W km).
+        - attenuation [float]:                  Attenuation in dB / km.
+        - noise_figure [float]:                 Amplifier noise figure in dB.
+        - polarisation_mode_dispersion [float]: Average accumulated differential group delay in ps/(km ^ 0.5); If 0, turns off major axes rotations as well.
+        - realisation_count [int]:              Number of fibre realisations with different distributed polarisation mode dispersion.
+        - photoelasticity [float]:              Fibre photoelasticity.
+        - modulus_model [str]:                  Method (FIXED or RANDOM) to generate polarisation mode dispersion realisations.
         """
         assert 'FIBRE'                        in parameters, f"Parameters are missing section 'FIBRE'."
         for field in (
                 'correlation_length',
                 'beat_length',
-                'step_length',
+                'span_length',
+                'steps_per_span',
                 'chromatic_dispersion',
                 'nonlinearity',
                 'attenuation',
+                'noise_figure',
                 'polarisation_mode_dispersion',
                 'realisation_count',
                 'photoelasticity',
@@ -67,10 +74,13 @@ class Fibre(ABC):
         
         self._correlation_length           = parameters.getfloat('FIBRE', 'correlation_length')
         self._beat_length                  = parameters.getfloat('FIBRE', 'beat_length')
-        self._step_length                  = parameters.getfloat('FIBRE', 'step_length')
+        self._span_length                  = parameters.getfloat('FIBRE', 'span_length')
+        self._steps_per_span               = parameters.getint('FIBRE', 'steps_per_span')
         self._chromatic_dispersion         = parameters.getfloat('FIBRE', 'chromatic_dispersion')
         self._nonlinearity                 = parameters.getfloat('FIBRE', 'nonlinearity')
-        self.attenuation                   = parameters.getfloat('FIBRE', 'attenuation')
+        self._attenuation_dB               = parameters.getfloat('FIBRE', 'attenuation')
+        self._attenuation_natural          = -self.attenuation_dB / 20 * np.log(10)
+        self._noise_figure_dB              = parameters.getfloat('FIBRE', 'noise_figure')
         self._polarisation_mode_dispersion = parameters.getfloat('FIBRE', 'polarisation_mode_dispersion')
         self._realisation_count            = int(parameters.getfloat('FIBRE', 'realisation_count'))
         self._photoelasticity              = parameters.getfloat('FIBRE', 'photoelasticity')
@@ -80,15 +90,31 @@ class Fibre(ABC):
             book  = 'fused_silica',
             page  = 'Malitson'
         )
+
+        for field in (
+                '_correlation_length',
+                '_beat_length',
+                '_span_length',
+                '_steps_per_span',
+                '_realisation_count',
+            ):
+            assert getattr(self, field) > 0, f"{field} must be >0, but was {field}"
+            
+        for field in (
+                '_attenuation_dB',
+                '_noise_figure_dB',
+            ):
+            assert getattr(self, field) >= 0, f"{field} must be >=0, but was {field}"      
         
         if 'path_coordinates' in parameters['FIBRE']:
             self._path = Path(
                     *np.array(json.loads(parameters.get('FIBRE', 'path_coordinates')), dtype = float).T
                 )
-            self._step_count    = None
+            self._span_count = None
+
         else:
-            self._path          = None
-            self._step_count = parameters.getint('FIBRE', 'step_count')
+            self._path       = None
+            self._span_count = parameters.getint('FIBRE', 'span_count')
 
         self._init_path()
         self._init_birefringence()
@@ -98,14 +124,37 @@ class Fibre(ABC):
         Initialise fibre- and step path information.
         """
         if self._path is not None:
-            self._step_path = self.path.interpolated(self._step_length)
+            self._span_path = self.path.interpolated(self._span_length)
 
         else:
-            self._step_path = Path(lengths = np.full(
-                    shape      = (self._step_count,),
-                    fill_value = self._step_length,
+            self._span_path = Path(lengths = np.full(
+                    shape      = (self._span_count,),
+                    fill_value = self._span_length,
                     dtype      = float
                 ))
+
+        step_coordinates_or_lengths = []
+        step_gains_dB = []
+        step_length = self._span_length / self.steps_per_span
+
+        for span in self.span_path:
+            span_step_path = span.interpolated(step_length)
+            try:
+                step_coordinates_or_lengths.append(span_step_path.coordinates[:-1])
+            except:
+                step_coordinates_or_lengths.append(span_step_path.lengths)
+        
+            step_gains_dB.extend([0,] * (span_step_path.edge_count - 1) + [self.attenuation_dB * span.length])
+
+        try:
+            step_coordinates_or_lengths.append(span_step_path.coordinates[-1, None])
+            step_coordinates = np.concatenate(step_coordinates_or_lengths, axis = 0)
+            self._step_path = Path(*step_coordinates.T)
+        except:
+            step_lengths = np.concatenate(step_coordinates_or_lengths, axis = 0)
+            self._step_path = Path(lengths = step_lengths)
+        
+        self._step_gains_dB = np.array(step_gains_dB)
 
     def _init_birefringence(self):
         """
@@ -165,13 +214,15 @@ class Fibre(ABC):
         perturbations            = self._prepare_perturbations(signal, perturbations)
         steps_iterable           = self._prepare_steps_iterable(signal, perturbations, step_start, step_stop)
         group_velocity           = self._prepare_group_velocity(signal)
+        noise_figure_linear      = self.noise_figure_linear # Prevent recalculation at every step
         
         linear_exponent = signal.xp.zeros(shape = (self.realisation_count, max(len(transmission_start_times), signal.shape[1]), *signal.shape[2:]), dtype = complex) # [R, B, S, P]
 
         for step_index, step_values in enumerate(steps_iterable):
             step_length = step_values[0]
-            step_centre_position = step_values[1]
-            birefringence_quantities = step_values[2:]
+            step_gain_linear = step_values[1]
+            step_centre_position = step_values[2]
+            birefringence_quantities = step_values[3:]
             linear_exponent[:] = 0
 
             if self.chromatic_dispersion != 0.:
@@ -190,7 +241,7 @@ class Fibre(ABC):
                 linear_exponent[:] = 0 # Re-initialise exponent to zeros
                 signal = self._apply_nonlinearity(signal, step_length) # Apply the nonlinear effects in the time domain
 
-            if self.attenuation > -np.inf:              linear_exponent = self._apply_attenuation(linear_exponent, step_length)
+            if self.attenuation_dB != 0.:           linear_exponent = self._apply_attenuation(linear_exponent, step_length)
             if self.chromatic_dispersion != 0.:         linear_exponent = self._apply_chromatic_dispersion(linear_exponent, signal, step_length / 2)
             if self.polarisation_mode_dispersion != 0.: linear_exponent = self._apply_half_birefringence(linear_exponent, signal, *birefringence_quantities)
 
@@ -198,6 +249,9 @@ class Fibre(ABC):
 
             if self.polarisation_mode_dispersion != 0.:
                 signal = self._finalise_birefringence(signal, *birefringence_quantities)
+
+            if step_gain_linear != 1.:
+                signal = self._apply_gain(signal, step_gain_linear, noise_figure_linear)
 
         return signal
 
@@ -341,9 +395,11 @@ class Fibre(ABC):
     @abstractmethod
     def _prepare_steps_iterable_arrays(self, signal, step_start, step_stop):
         step_lengths              = signal.invite_array(self.step_path.lengths[step_start:step_stop])
+        step_gains_linear         = signal.invite_array(self.step_gains_linear[step_start:step_stop])
         step_centre_positions     = signal.invite_array(self.step_path.centre_positions[step_start:step_stop])
         differential_group_delays = signal.invite_array(self.differential_group_delays[step_start:step_stop, :, None, None]) # [S, R, 1, 1]
-        return step_lengths, step_centre_positions, differential_group_delays
+
+        return step_lengths, step_gains_linear, step_centre_positions, differential_group_delays
 
     def _step_perturbations_indices(self, signal, perturbations, transmission_start_times, step_centre_position, group_velocity):
         perturbations_sample_times      = transmission_start_times + step_centre_position / group_velocity # [B,]
@@ -365,7 +421,7 @@ class Fibre(ABC):
         return linear_exponent + 0.5j * self.chromatic_dispersion * signal.frequency_angular[None, None, :, None] ** 2 * step_length * 1e-24 # [R, B, S, P]
 
     @abstractmethod
-    def _prepare_birefringence(self, linear_exponent, signal, birefringence_quantities):
+    def _prepare_birefringence(self, signal, birefringence_quantities):
         pass
 
     @abstractmethod
@@ -407,10 +463,24 @@ class Fibre(ABC):
         """
         Attenuation is applied only when propagating a signal (not when building a Jones matrix). Therefore, signal always has shape [R, B, S, P] here with realisations R, batch size B, time/frequency axis S and polarisations P = 2
         """
-        return linear_exponent + self.attenuation_exponent * step_length
+        return linear_exponent + self.attenuation_natural * step_length
 
     def _apply_linear_exponent(self, linear_exponent, signal):
         signal.samples_frequency = signal.samples_frequency * signal.xp.exp(linear_exponent)
+        return signal
+
+    def _apply_gain(self, signal, gain_linear, noise_figure_linear):
+        noise_power_per_channel = noise_figure_linear * gain_linear * sp.constants.Planck * signal.carrier_frequency * signal.bandwidth / 2 / 2 # /2 to divide over polarisations, /2 to spread over perpendicular phases. Don't scale by sqrt(sample_count), because the fourier transforms used internally in Signal are orthonormal
+        
+        if signal.xp == np:
+            amplified_spontaneous_emission = np.sqrt(noise_power_per_channel) * (np.random.default_rng().normal(size = signal.shape) + 1j * np.random.default_rng().normal(size = signal.shape))
+        else:
+            amplified_spontaneous_emission = cp.sqrt(noise_power_per_channel) * (cp.random.normal(size = signal.shape) + 1j * cp.random.normal(size = signal.shape))
+        
+        signal.samples += amplified_spontaneous_emission / 2
+        signal.samples *= gain_linear
+        signal.samples += amplified_spontaneous_emission / 2
+
         return signal
 
     def group_velocity(self, carrier_wavelength: float):
@@ -436,11 +506,15 @@ class Fibre(ABC):
         fibre_dict = {
             'correlation_length':           self.correlation_length,
             'beat_length':                  self.beat_length,
+            'span_path':                    self.span_path.to_dict(),
             'step_path':                    self.step_path.to_dict(),
-            'polarisation_mode_dispersion': self.polarisation_mode_dispersion,
+            'steps_per_span':               self.steps_per_span,
+            'step_gains':                   self.step_gains_dB.tolist(),
             'chromatic_dispersion':         self.chromatic_dispersion,
             'nonlinearity':                 self.nonlinearity,
-            'attenuation':                  self.attenuation,
+            'attenuation':                  self.attenuation_dB,
+            'noise_figure':                 self.noise_figure_dB,
+            'polarisation_mode_dispersion': self.polarisation_mode_dispersion,
             'realisation_count':            self.realisation_count,
             'photoelasticity':              self.photoelasticity,
             'modulus_model':                self.modulus_model.name,
@@ -470,27 +544,31 @@ class Fibre(ABC):
         parameters.add_section('FIBRE')
         parameters.set('FIBRE', 'correlation_length',           str(fibre_dict['correlation_length']))
         parameters.set('FIBRE', 'beat_length',                  str(fibre_dict['beat_length']))
+        parameters.set('FIBRE', 'steps_per_span',               str(fibre_dict['steps_per_span']))
         parameters.set('FIBRE', 'chromatic_dispersion',         str(fibre_dict['chromatic_dispersion']))
         parameters.set('FIBRE', 'nonlinearity',                 str(fibre_dict['nonlinearity']))
         parameters.set('FIBRE', 'attenuation',                  str(fibre_dict['attenuation']))
+        parameters.set('FIBRE', 'noise_figure',                 str(fibre_dict['noise_figure']))
         parameters.set('FIBRE', 'polarisation_mode_dispersion', str(fibre_dict['polarisation_mode_dispersion']))
         parameters.set('FIBRE', 'realisation_count',            str(fibre_dict['realisation_count']))
         parameters.set('FIBRE', 'photoelasticity',              str(fibre_dict['photoelasticity']))
         parameters.set('FIBRE', 'modulus_model',                fibre_dict['modulus_model'])
 
-        step_path = Path.from_dict(fibre_dict['step_path'])
-        parameters.set('FIBRE', 'step_length', str(step_path.lengths[0]))
+        span_path = Path.from_dict(fibre_dict['span_path'])
+        parameters.set('FIBRE', 'span_length', str(span_path.lengths[0]))
         
         if 'path' in fibre_dict:
             path = Path.from_dict(fibre_dict['path'])
             parameters.set('FIBRE', 'path_coordinates', json.dumps(path.coordinates.tolist()))
         else:
-            parameters.set('FIBRE', 'step_count', str(step_path.edge_count))
+            parameters.set('FIBRE', 'span_count', str(span_path.edge_count))
 
         fibre = cls(parameters)
         fibre.differential_group_delays = np.array(fibre_dict['differential_group_delays'])
         
-        fibre._step_path = step_path
+        fibre._step_path = Path.from_dict(fibre_dict['step_path'])
+        fibre._step_gains_dB = np.array(fibre_dict['step_gains'])
+        fibre._span_path = span_path
         if 'path' in fibre_dict:
             fibre._path = path
 
@@ -499,9 +577,15 @@ class Fibre(ABC):
     def __eq__(self, other) -> bool:
         return self._polarisation_mode_dispersion  == other._polarisation_mode_dispersion and \
             self._photoelasticity                  == other._photoelasticity              and \
+            self._chromatic_dispersion             == other._chromatic_dispersion         and \
+            self._nonlinearity                     == other._nonlinearity                 and \
+            self._attenuation_dB                   == other._attenuation_dB               and \
+            self._noise_figure_dB                  == other._noise_figure_dB              and \
             self._realisation_count                == other._realisation_count            and \
             self._step_path                        == other._step_path                    and \
+            self._span_path                        == other._span_path                    and \
             self._path                             == other._path                         and \
+            np.all(self._step_gains_dB             == other._step_gains_dB)               and \
             np.all(self._differential_group_delays == other._differential_group_delays)   and \
             self._modulus_model                    == other._modulus_model
 
@@ -519,6 +603,28 @@ class Fibre(ABC):
         raise AttributeError("The path cannot be changed after instantiation of the Fibre")
 
     @property
+    def span_path(self) -> Path:
+        """
+        [Path] segmented fibre path, divided into spans which end with an amplifier. May or may not include earth coordinates, depending on how the fibre was created
+        """
+        return self._span_path
+
+    @span_path.setter
+    def span_path(self, value):
+        raise AttributeError("The span path cannot be changed after instantiation of the Fibre")
+
+    @property
+    def steps_per_span(self) -> int:
+        """
+        [int] number of split-step simulation steps per fibre span
+        """
+        return self._steps_per_span
+
+    @steps_per_span.setter
+    def steps_per_span(self, value):
+        raise AttributeError("The steps per span cannot be changed after instantiation of the Fibre")
+
+    @property
     def step_path(self) -> Path:
         """
         [Path] segmented fibre path, divided into short split-step steps. May or may not include earth coordinates, depending on the fibre parameters
@@ -528,6 +634,28 @@ class Fibre(ABC):
     @step_path.setter
     def step_path(self, value):
         raise AttributeError("The step path cannot be changed after instantiation of the Fibre")
+
+    @property
+    def step_gains_dB(self) -> list:
+        """
+        [list] for each step in step_path, contains a gain in dB if this step has an amplifier at the end, and otherwise 0.
+        """
+        return self._step_gains_dB
+
+    @step_gains_dB.setter
+    def step_gains_dB(self, value):
+        raise AttributeError("The gain per step cannot be changed after instantiation of the Fibre")
+
+    @property
+    def step_gains_linear(self) -> list:
+        """
+        [list] for each step in step_path, contains an gain scalar if this step has an amplifier at the end, and otherwise 0.
+        """
+        return dB2linear(self.step_gains_dB, Gain.AMPLITUDE)
+
+    @step_gains_linear.setter
+    def step_gains_linear(self, value):
+        raise AttributeError("The gain per step cannot be changed after instantiation of the Fibre")
 
     @property
     def correlation_length(self) -> float:
@@ -574,29 +702,48 @@ class Fibre(ABC):
         raise AttributeError("The nonlinearity parameter cannot be changed after instantiation of the Fibre")
 
     @property
-    def attenuation(self) -> float:
+    def attenuation_dB(self) -> float:
         """
         [float] attenuation of this Fibre in dB / km
         """
-        return float(self._attenuation)
+        return float(self._attenuation_dB)
 
-    @attenuation.setter
-    def attenuation(self, value):
-        assert isinstance(value, (int, np.integer, float, np.floating)), f"attenuation must be a float, but was a {type(value)}"
-        self._attenuation = float(value)
-        self._attenuation_exponent = -self.attenuation / 20 * np.log(10)
-        # raise AttributeError("The attenuation parameter cannot be changed after instantiation of the Fibre")
+    @attenuation_dB.setter
+    def attenuation_dB(self, value):
+        raise AttributeError("The attenuation parameter cannot be changed after instantiation of the Fibre")
 
     @property
-    def attenuation_exponent(self) -> float:
+    def attenuation_natural(self) -> float:
         """
-        [float] the exponent that applies attenuation of this Fibre per km. exp(attenuation_exponent * step_length) = 10 ** (-attenuation * step_length / 20)
+        [float] the exponent that applies attenuation of this Fibre per km. exp(attenuation_natural * step_length) = 10 ** (-attenuation_dB * step_length / 20)
         """
-        return float(self._attenuation_exponent)
+        return float(self._attenuation_natural)
 
-    @attenuation_exponent.setter
-    def attenuation_exponent(self) -> float:
-        raise AttributeError("attenuation_exponent cannot be set directly; set attenuation instead")
+    @attenuation_natural.setter
+    def attenuation_natural(self) -> float:
+        raise AttributeError("attenuation_natural cannot be changed after instantiation of the Fibre")
+
+    @property
+    def noise_figure_dB(self):
+        """
+        [float] the amplifier noise figure in dB.
+        """
+        return self._noise_figure_dB
+
+    @noise_figure_dB.setter
+    def noise_figure_dB(self, value):
+        raise AttributeError("The noise_figure parameter cannot be changed after instantiation of the Fibre")
+
+    @property
+    def noise_figure_linear(self):
+        """
+        [float] the amplifier noise figure in linear gain.
+        """
+        return dB2linear(self.noise_figure_dB, Gain.POWER)
+
+    @noise_figure_linear.setter
+    def noise_figure_linear(self):
+        raise AttributeError("The noise_figure parameter cannot be changed after instantiation of the Fibre")
 
     @property
     def polarisation_mode_dispersion(self) -> float:

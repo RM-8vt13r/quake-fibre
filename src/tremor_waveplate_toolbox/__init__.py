@@ -29,7 +29,7 @@ def _setup_cuda_local_path():
 _setup_cuda_local_path()
 del _setup_cuda_local_path
 
-from .constants import Domain, Device, PAULI_1, PAULI_2, PAULI_3, PAULI_VECTOR
+from .constants import Domain, Device, Gain, PAULI_1, PAULI_2, PAULI_3, PAULI_VECTOR
 from .constellation import Constellation, BPSK, QPSK, PSK8, QAM4, QAM16, QAM64
 from .drift import Drift
 from .earthquake import Earthquake
@@ -43,4 +43,4 @@ from .pulse import Pulse, Sinc, SINC, RootRaisedCosine, RRCOS, Square, SQUARE
 from .scramblers import Scramblers
 from .signal import Signal
 from .transceiver import Transceiver
-from .utils import rotation_matrix, phase_matrix
+from .utilities import rotation_matrix, phase_matrix, dB2linear, linear2dB

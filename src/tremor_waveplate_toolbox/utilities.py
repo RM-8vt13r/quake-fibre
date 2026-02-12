@@ -7,7 +7,7 @@ try:
 except:
     pass
 
-from .constants import PAULI_3
+from .constants import PAULI_3, Gain
 try:
     from .constants import PAULI_3_CUDA
 except:
@@ -52,3 +52,30 @@ def phase_matrix(phase: (float, np.ndarray)) -> np.ndarray:
     matrix[..., 0, 0] = phasor
     matrix[..., 1, 1] = phasor.conjugate()
     return matrix
+
+def dB2linear(value_dB: (float, np.ndarray), gain: Gain = Gain.AMPLITUDE):
+    """
+    Calculate a linear gain from a dB gain.
+
+    Inputs:
+    - value_dB [float]: the value to convert from dB to linear gain
+    - gain [Gain]: the type of gain; amplitude gain or power gain
+
+    Outputs:
+    - [float]: the linear gain
+    """
+    return 10 ** (value_dB / (20 if gain == Gain.AMPLITUDE else 10))
+
+def linear2dB(value: (float, np.ndarray), gain: Gain = Gain.AMPLITUDE):
+    """
+    Calculate a gain in dB from a linear gain.
+
+    Inputs:
+    - value [float]: the value to convert from linear gain to dB
+    - gain [Gain]: the type of gain; amplitude gain or power gain
+
+    Outputs:
+    - [float]: the gain in dB
+    """
+    xp = np if isinstance(value, (np.ndarray, int, np.integer, float, np.floating)) else cp
+    return (20 if gain == Gain.AMPLITUDE else 10) * xp.log10(value)

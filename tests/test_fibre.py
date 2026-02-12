@@ -13,34 +13,37 @@ except:
 import numpy as np
 import scipy as sp
 
-from tremor_waveplate_toolbox import FibreCoarseStep, FibreCNLSE, Transceiver, Device, Signal, Perturbation
+from tremor_waveplate_toolbox import FibreCoarseStep, FibreCNLSE, Transceiver, Device, Signal, Perturbation, Domain
 
 parameters = ConfigParser()
 parameters['TRANSCEIVER'] = {
     'constellation': 'QPSK',  # The symbol constellation to use
     'power': '2',             # Transmission power in dBm
-    'baud_rate': '40e9',      # Baud rate in symbols / s
+    'symbol_rate': '40e9',    # Symbol rate in symbols / s
     'pulse': 'RRCOS',         # Pulseshape, can be SINC or RRCOS, or define your own using the Pulse class
     'pulse_parameter': '0.5', # Parameter to pass to the pulse constructor. For a RRCOS pulse, this is the rolloff factor
-    'sample_factor': '4'      # Samples per symbol
+    'sample_factor': '4',     # Samples per symbol
 }
 
 parameters['FIBRE'] = {
     'correlation_length': '0.1',          # Correlation length in km
     'beat_length': '0.05',                # Beat length in km
-    'step_length': '0.0167',              # Simulation step length in km
-    'step_count': '1000',                 # Number of simulation steps
-    'modulus_model': 'FIXED',             # Polarisation mode dispersion initialisation model
+    'span_length': '1.67',                # Simulation span length in km
+    'steps_per_span': '100',              # Number of simulation steps per span
+    'span_count': '10',                   # Number of simulation spans, after each of which the signal is amplified
     'chromatic_dispersion': '0',          # Chromatic dispersion parameter in ps ^ 2 / km
     'nonlinearity': '0',                  # Nonlinearity parameter in 1 / (W km)
-    'attenuation': '-inf',                # Fibre attenuation in dB / km
+    'attenuation': '0',                   # Fibre attenuation in dB / km
+    'noise_figure': '0',                  # Amplifier noise figure in dB, 0 for noiseless amplifiers
     'polarisation_mode_dispersion': '10', # Polarisation mode dispersion parameter in ps / (km ^ 0.5); If 0, turns off major axes rotations as well
     'realisation_count': '99',            # Number of fibre realisations to simulate simultaneously
-    'photoelasticity': '0.78'             # Photoelasticity, which relates material strain to optical strain
+    'photoelasticity': '0.78',            # Photoelasticity, which relates material strain to optical strain
+    'modulus_model': 'FIXED'              # Polarisation mode dispersion initialisation model
 }
 
 parameters['SIGNAL'] = {
-    'symbol_count': '1e2' # How many symbols to transmit
+    'symbol_count': '1e2', # How many symbols to transmit
+    'carrier': '1550'      # Carrier wavelength in nm
 }
 
 parameters_geographic = copy.deepcopy(parameters)
@@ -67,11 +70,13 @@ def test_fibre_propagation():
         except: pass
         else:   raise AssertionError(f"{type(channel)} should raise an error when accessing unset step_path.coordinates, but didn't")
 
-        assert np.all(channel.step_path.lengths == parameters.getfloat('FIBRE', 'step_length')), f"{type(channel)} steps should have length step_length, but didn't"
-        assert channel.step_path.edge_count == parameters.getint('FIBRE', 'step_count'), f"{type(channel)} should have {parameters.getint('FIBRE', 'step_count')} steps, but had {channel.step_path.edge_count}"
+        assert np.all(channel.span_path.lengths == parameters.getfloat('FIBRE', 'span_length')), f"{type(channel)} spans should have length span_length, but didn't"
+        assert channel.span_path.edge_count == parameters.getint('FIBRE', 'span_count'), f"{type(channel)} should have {parameters.getint('FIBRE', 'span_count')} spans, but had {channel.span_path.edge_count}"
+        assert channel.step_path.edge_count == channel.span_path.edge_count * parameters.getint('FIBRE', 'steps_per_span'), f"{type(channel)} should have span_count ({channel.span_path.edge_count}) * steps_per_span ({channel.steps_per_span}) = {channel.span_path.edge_count * channel.steps_per_span} steps, but had {channel.step_path.edge_count}"
+        assert np.isclose(channel.step_path.length, channel.span_path.length), f"{type(channel)} step_path and span_path should have the same length, but were {channel.step_path.length} km and {channel.span_path.length} km"
 
         transceiver = Transceiver(parameters)
-        _, signal = transceiver.transmit_random_symbols(1, int(parameters.getfloat("SIGNAL", "symbol_count")))
+        _, signal = transceiver.transmit_random_symbols(1, int(parameters.getfloat('SIGNAL', 'symbol_count')), parameters.getfloat('SIGNAL', 'carrier'))
 
         # Test signal propagation and Jones matrix construction
         propagated_signal = channel(signal)
@@ -97,12 +102,35 @@ def test_fibre_propagation():
         assert np.allclose(propagated_signal.samples_time, full_propagated_signal.samples_time), f"Propagating a signal through the fibre in one and two passes did not yield equal results"
 
         # Test attenuation
-        channel.attenuation = 0.1
+        channel._attenuation_dB = 0.1
+        channel._attenuation_natural = -channel.attenuation_dB / 20 * np.log(10)
+        channel._polarisation_mode_dispersion = 0.0
         propagated_signal_attenuated = channel(signal)
-        assert np.allclose(propagated_signal_attenuated.power_dBm, signal.power_dBm - 0.1 * channel.step_path.length), f"After propagating a {signal.power_dBm} dBm signal through {channel.step_path.length} km fibre with {channel.attenuation} dB/km attenuation, it should have power {signal.power_dBm - channel.attenuation * channel.step_path.length} dBm but it had power {propagated_signal_attenuated.power_dBm}"
-        channel.attenuation = 0
+        assert np.allclose(propagated_signal_attenuated.power_dBm, signal.power_dBm - channel.attenuation_dB * channel.step_path.length), f"After propagating a {signal.power_dBm} dBm signal through {channel.step_path.length} km fibre with {channel.attenuation} dB/km attenuation, it should have power {signal.power_dBm - channel.attenuation * channel.step_path.length} dBm but it had power {propagated_signal_attenuated.power_dBm}"
 
-        # Test chromatic dispersion, nonlinearity, polarisation-dependent loss and amplified spontaneous emission..
+        # Test amplified spontaneous emission
+        channel._noise_figure_dB = 4
+        channel._init_path()
+        propagated_signal_noisy = channel(signal)
+        EDFA_input_power_W = 0.001 * 10 ** ((signal.power_dBm - channel._attenuation_dB * channel._span_length) / 10)
+        expected_output_OSNR = EDFA_input_power_W / (channel.span_path.edge_count * channel.noise_figure_linear * sp.constants.Planck * signal.carrier_frequency * signal.bandwidth)
+        output_noise_signal = Signal(
+            samples = propagated_signal_noisy.samples_time - propagated_signal_no_DGD.samples_time,
+            sample_rate = propagated_signal_noisy.sample_rate,
+            sample_axis = propagated_signal_noisy.sample_axis,
+            domain = Domain.TIME,
+            carrier_wavelength = propagated_signal_noisy.carrier_wavelength
+        )
+        output_OSNR = propagated_signal_no_DGD.power_W / output_noise_signal.power_W
+        assert np.isclose(np.mean(output_OSNR), expected_output_OSNR, rtol = 5e-2), f"Expected output OSNR {expected_output_OSNR}, but signal had OSNR {output_OSNR}"
+
+        channel._attenuation_dB = 0
+        channel._attenuation_natural = 0
+        channel._noise_figure_dB = 0
+        channel._init_path()
+        channel._polarisation_mode_dispersion = parameters.getfloat('FIBRE', 'polarisation_mode_dispersion')
+
+        # Test chromatic dispersion, nonlinearity, and polarisation-dependent loss..
 
         # Tests CUDA implementation
         if 'cupy' not in sys.modules: continue
@@ -195,8 +223,10 @@ def test_fibre_initialisation():
 
 def test_fibre_path():
     for channel in (FibreCNLSE(parameters_geographic), FibreCoarseStep(parameters_geographic)):
-        assert np.allclose(channel.step_path.lengths[:-1], parameters_geographic.getfloat('FIBRE', 'step_length')), "Fibre step lengths didn't match parameter step_length with geographic initialisation"
-        assert np.isclose(np.sum(channel.step_path.lengths), np.sum(channel.path.lengths)), f"Fibre path- and step lengths add up to {np.sum(channel.path.lengths)} and {np.sum(channel.step_path.lengths)}, but should have the same total"
+        assert np.allclose(channel.span_path.lengths[:-1], parameters_geographic.getfloat('FIBRE', 'span_length')), "Fibre span lengths didn't match parameter span_length with geographic initialisation"
+        assert channel.step_path.edge_count > (channel.span_path.edge_count - 1) * parameters_geographic.getint('FIBRE', 'steps_per_span') and channel.step_path.edge_count <= channel.span_path.edge_count * parameters_geographic.getint('FIBRE', 'steps_per_span'), f"{type(channel)} should have more than (span_count - 1) ({channel.span_path.edge_count - 1}) * steps_per_span ({channel.steps_per_span}) = {(channel.span_path.edge_count - 1) * channel.steps_per_span} steps and at most span_count ({channel.span_path.edge_count}) * steps_per_span ({channel.steps_per_span}) = {channel.span_path.edge_count * channel.steps_per_span} steps, but had {channel.step_path.edge_count} steps"
+        assert np.isclose(channel.step_path.length, channel.path.lengths) and np.isclose(channel.span_path.length, channel.path.lengths), f"Fibre path-, span- and step lengths add up to {np.sum(channel.path.lengths)}, {np.sum(channel.span_path.lengths)} and {np.sum(channel.step_path.lengths)}, but should have the same total"
+        assert len(channel.step_gains_dB.shape) == 1 and len(channel.step_gains_dB) == channel.step_path.edge_count, f"Fibre step_gains_dB should have shape [step_path.edge_count ({channel.step_path.edge_count})], but had shape {channel.step_gains_dB.shape}"
 
         try:
             channel.path.coordinates

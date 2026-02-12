@@ -13,7 +13,7 @@ import scipy as sp
 
 from .constants import Domain
 from .signal import Signal
-from .utils import rotation_matrix
+from .utilities import rotation_matrix
 
 class Perturbation(Signal):
     def __init__(self,

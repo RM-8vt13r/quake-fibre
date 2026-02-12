@@ -29,6 +29,12 @@ ModulusModel = Enum('ModulusModel', [
     'FIXED'
 ])
 
+# Type of gain
+Gain = Enum('Gain', [
+    'POWER',
+    'AMPLITUDE'
+])
+
 # Pauli spin matrices
 PAULI_1 = np.array([
     [1,  0],
