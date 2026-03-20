@@ -74,7 +74,7 @@ class Transceiver:
         Inputs:
         - symbol [np.ndarray]: the symbol to repeat, shape [P] where P = 2 indexes two orthogonal polarisations.
         - symbol_count [int]: the number of (identicals) symbols to transmit. Each symbol is upsampled to self.sample_factor identical samples
-        - carrrier_wavelength [int]: the signal carrier wavelength in nm
+        - carrier_wavelength [int]: the signal carrier wavelength in nm
 
         Outputs:
         - [Signal]: the output signal, shape [R,B,S,P] where R = 1 is fibre realisations, B = 1 is batches and S = sample_count

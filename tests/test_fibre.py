@@ -103,10 +103,9 @@ def test_fibre_propagation():
 
         # Test attenuation
         channel._attenuation_dB = 0.1
-        channel._attenuation_natural = -channel.attenuation_dB / 20 * np.log(10)
         channel._polarisation_mode_dispersion = 0.0
         propagated_signal_attenuated = channel(signal)
-        assert np.allclose(propagated_signal_attenuated.power_dBm, signal.power_dBm - channel.attenuation_dB * channel.step_path.length), f"After propagating a {signal.power_dBm} dBm signal through {channel.step_path.length} km fibre with {channel.attenuation} dB/km attenuation, it should have power {signal.power_dBm - channel.attenuation * channel.step_path.length} dBm but it had power {propagated_signal_attenuated.power_dBm}"
+        assert np.allclose(propagated_signal_attenuated.power_dBm, signal.power_dBm - channel.attenuation_dB * channel.step_path.length), f"After propagating a {signal.power_dBm} dBm signal through {channel.step_path.length} km fibre with {channel.attenuation_dB} dB/km attenuation, it should have power {signal.power_dBm - channel.attenuation_dB * channel.step_path.length} dBm but it had power {propagated_signal_attenuated.power_dBm} dBm"
 
         # Test amplified spontaneous emission
         channel._noise_figure_dB = 4

@@ -293,7 +293,7 @@ class Path:
     @property
     def centre_coordinates(self):
         """
-        [np.ndarray] Path edge centre coordinates in chronological order, shape [C, 2] where the last dimension contains longitude, latitude
+        [np.ndarray] Path edge centre coordinates in chronological order, shape [C-1, 2] where the last dimension contains longitude, latitude
         """
         return (self.coordinates[:-1] + self.coordinates[1:]) / 2
 

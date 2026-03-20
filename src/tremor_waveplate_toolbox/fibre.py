@@ -79,7 +79,6 @@ class Fibre(ABC):
         self._chromatic_dispersion         = parameters.getfloat('FIBRE', 'chromatic_dispersion')
         self._nonlinearity                 = parameters.getfloat('FIBRE', 'nonlinearity')
         self._attenuation_dB               = parameters.getfloat('FIBRE', 'attenuation')
-        self._attenuation_natural          = -self.attenuation_dB / 20 * np.log(10)
         self._noise_figure_dB              = parameters.getfloat('FIBRE', 'noise_figure')
         self._polarisation_mode_dispersion = parameters.getfloat('FIBRE', 'polarisation_mode_dispersion')
         self._realisation_count            = int(parameters.getfloat('FIBRE', 'realisation_count'))
@@ -463,7 +462,7 @@ class Fibre(ABC):
         """
         Attenuation is applied only when propagating a signal (not when building a Jones matrix). Therefore, signal always has shape [R, B, S, P] here with realisations R, batch size B, time/frequency axis S and polarisations P = 2
         """
-        return linear_exponent + self.attenuation_natural * step_length
+        return linear_exponent - self.attenuation_natural * step_length
 
     def _apply_linear_exponent(self, linear_exponent, signal):
         signal.samples_frequency = signal.samples_frequency * signal.xp.exp(linear_exponent)
@@ -471,15 +470,17 @@ class Fibre(ABC):
 
     def _apply_gain(self, signal, gain_linear, noise_figure_linear):
         noise_power_per_channel = noise_figure_linear * gain_linear * sp.constants.Planck * signal.carrier_frequency * signal.bandwidth / 2 / 2 # /2 to divide over polarisations, /2 to spread over perpendicular phases. Don't scale by sqrt(sample_count), because the fourier transforms used internally in Signal are orthonormal
+        # noise_power_per_channel = (noise_figure_linear * gain_linear - 1) * sp.constants.Planck * signal.carrier_frequency * signal.bandwidth / 2 / 2
         
         if signal.xp == np:
             amplified_spontaneous_emission = np.sqrt(noise_power_per_channel) * (np.random.default_rng().normal(size = signal.shape) + 1j * np.random.default_rng().normal(size = signal.shape))
         else:
             amplified_spontaneous_emission = cp.sqrt(noise_power_per_channel) * (cp.random.normal(size = signal.shape) + 1j * cp.random.normal(size = signal.shape))
         
-        signal.samples += amplified_spontaneous_emission / 2
-        signal.samples *= gain_linear
-        signal.samples += amplified_spontaneous_emission / 2
+        # signal.samples += amplified_spontaneous_emission / 2
+        # signal.samples *= gain_linear
+        # signal.samples += amplified_spontaneous_emission / 2
+        signal.samples = signal.samples * gain_linear + amplified_spontaneous_emission
 
         return signal
 
@@ -717,7 +718,7 @@ class Fibre(ABC):
         """
         [float] the exponent that applies attenuation of this Fibre per km. exp(attenuation_natural * step_length) = 10 ** (-attenuation_dB * step_length / 20)
         """
-        return float(self._attenuation_natural)
+        return float(self.attenuation_dB * 0.115129255) # 0.115129255 = ln(10) / 20
 
     @attenuation_natural.setter
     def attenuation_natural(self) -> float:

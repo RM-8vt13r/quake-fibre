@@ -32,7 +32,8 @@ del _setup_cuda_local_path
 from .constants import Domain, Device, Gain, PAULI_1, PAULI_2, PAULI_3, PAULI_VECTOR
 from .constellation import Constellation, BPSK, QPSK, PSK8, QAM4, QAM16, QAM64
 from .drift import Drift
-from .earthquake import Earthquake
+from .earthquake_submarine import EarthquakeSubmarine
+from .earthquake_terrestrial import EarthquakeTerrestrial
 from .fibre_coarse_step import FibreCoarseStep
 from .fibre_cnlse import FibreCNLSE
 from .fibre import Fibre
