@@ -184,8 +184,6 @@ class EarthquakeSubmarine(Earthquake):
         distance_angles = op.geodetics.base.locations2degrees(path.centre_latitudes, path.centre_longitudes, self.origin.latitude, self.origin.longitude)
         ray_parameters  = np.interp(distance_angles, EarthquakeSubmarine.RAY_ANGLES, EarthquakeSubmarine.RAY_PARAMETERS)
 
-        import pdb
-        pdb.set_trace()
         constants = np.sqrt(1 - ray_parameters ** 2 * self.water_sound_velocity ** 2)
         differential_pressures = Signal(
             samples = self.water_density * self.water_depth * normal_accelerations.samples_time, # Pa
