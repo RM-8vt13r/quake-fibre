@@ -16,6 +16,9 @@ from .path import Path
 logger = logging.getLogger()
 
 class EarthquakeSubmarine(Earthquake):
+    RAY_ANGLES = None
+    RAY_PARAMETERS = None
+
     @override
     def __init__(self, parameters: ConfigParser):
         """
@@ -26,6 +29,7 @@ class EarthquakeSubmarine(Earthquake):
         - water_density [float]: Water density at the seafloor in kg / m3
         - water_depth [float]: Depth of the sea in m
         - strain_coefficient [float]: Coupling coefficient from pressure to strain in 1 / Pa
+        - ray_resolution [float]: EarthquakeSubmarine generates a lookup table upon creation; ray_resolution
         """
         super().__init__(parameters)
 
@@ -33,11 +37,15 @@ class EarthquakeSubmarine(Earthquake):
         assert 'water_density'        in parameters['EARTHQUAKE'], "'water_density' is missing from parameters section 'EARTHQUAKE'."
         assert 'water_depth'          in parameters['EARTHQUAKE'], "'water_depth' is missing from parameters section 'EARTHQUAKE'."
         assert 'strain_coefficient'   in parameters['EARTHQUAKE'], "'strain_coefficient' is missing from parameters section 'EARTHQUAKE'."
+        assert 'ray_resolution'       in parameters['EARTHQUAKE'], "'ray_resolution' is missing from parameters section 'EARTHQUAKE'"
 
         self._water_sound_velocity = parameters.getfloat('EARTHQUAKE', 'water_sound_velocity') # Speed of sound through water at the ocean floor in m / s
         self._water_density        = parameters.getfloat('EARTHQUAKE', 'water_density') # Water density at the seafloor in kg / m3
         self._water_depth          = parameters.getfloat('EARTHQUAKE', 'water_depth')   # Depth of the sea in m
         self._strain_coefficient   = parameters.getfloat('EARTHQUAKE', 'strain_coefficient') # Strain coefficient in 1 / Pa
+        ray_resolution             = parameters.getfloat('EARTHQUAKE', 'ray_resolution') # Step size in degrees to generate the ray parameter lookup table with
+
+        assert ray_resolution > 0 and ray_resolution <= 180, f"ray_resolution must be between 0 and 180, but was {ray_resolution}"
 
         for field in (
                 '_water_sound_velocity',
@@ -45,6 +53,25 @@ class EarthquakeSubmarine(Earthquake):
                 '_water_depth'
             ):
             assert getattr(self, field) > 0, f"{field} must be >0, but was {field}"
+
+        if EarthquakeSubmarine.RAY_PARAMETERS is None or EarthquakeSubmarine.RAY_PARAMETERS[1] - EarthquakeSubmarine.RAY_PARAMETERS[0] > ray_resolution:
+            logger.info(f"Initialising ray parameters table with resolution {ray_resolution} degrees..")
+
+            EarthquakeSubmarine.RAY_ANGLES = np.append(np.arange(0, 180, ray_resolution), 180)
+            
+            model = self.model.split('_')[0].lower()
+            taup_model = op.taup.TauPyModel(model = model if model != 'ak135f' else 'ak135')
+            EarthquakeSubmarine.RAY_PARAMETERS = []
+            for angle in EarthquakeSubmarine.RAY_ANGLES:
+                travel_times = taup_model.get_travel_times(
+                        source_depth_in_km = self.origin.depth / 1000,
+                        distance_in_degree = angle,
+                    )
+                travel_time = min(travel_times, key = lambda x: x.time)
+                ray_parameter = travel_time.ray_param_sec_degree / op.geodetics.degrees2kilometers(1000) # s / m
+                EarthquakeSubmarine.RAY_PARAMETERS.append(ray_parameter)
+
+            EarthquakeSubmarine.RAY_PARAMETERS = np.array(EarthquakeSubmarine.RAY_PARAMETERS)
 
     @override
     def _local_seismograms_build_batches(self,
@@ -104,9 +131,6 @@ class EarthquakeSubmarine(Earthquake):
         """
         earthquake_path, displacements_local = self.request_local_seismograms(path, step_length, duration, batch_size, worker_count, request_delay)
 
-        # import pdb
-        # pdb.set_trace()
-
         normal_displacements = np.zeros(shape = (path.edge_count, displacements_local.shape[1] + 2, 1))
         if step_length is not None:
             normal_displacements[:, 1:-1] = self._normal_displacements_interpolate(earthquake_path, path, displacements_local.samples_time[:, :, 2, None])
@@ -158,19 +182,10 @@ class EarthquakeSubmarine(Earthquake):
 
         # Obtain ray parameter for each path vertex
         distance_angles = op.geodetics.base.locations2degrees(path.centre_latitudes, path.centre_longitudes, self.origin.latitude, self.origin.longitude)
-        model = self.model.split('_')[0].lower()
-        taup_model = op.taup.TauPyModel(model = model if model != 'ak135f' else 'ak135')
+        ray_parameters  = np.interp(distance_angles, EarthquakeSubmarine.RAY_ANGLES, EarthquakeSubmarine.RAY_PARAMETERS)
 
-        ray_parameters = np.zeros_like(distance_angles)
-        for index, distance_angle in enumerate(distance_angles):
-            ray_parameters[index] = taup_model.get_travel_times(
-                    source_depth_in_km = self.origin.depth / 1000,
-                    distance_in_degree = distance_angle
-                )[0].ray_param # s / rad
-
-        ray_parameters *= 2 * np.pi / 360 # s / deg
-        ray_parameters /= op.geodetics.degrees2kilometers(1000) # s / m
-
+        import pdb
+        pdb.set_trace()
         constants = np.sqrt(1 - ray_parameters ** 2 * self.water_sound_velocity ** 2)
         differential_pressures = Signal(
             samples = self.water_density * self.water_depth * normal_accelerations.samples_time, # Pa

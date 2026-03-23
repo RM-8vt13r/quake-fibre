@@ -28,7 +28,8 @@ parameters['EARTHQUAKE'] = {
     'step_length_sparse': '1',      # Distances at which to request seismograms in km; these seismograms are interpolated to all fibre section 
     'step_length_dense': '0.1',     # Distances at which to request seismograms in km; these seismograms are interpolated to all fibre section 
     'worker_count': '5',            # Number of threads to request seismograms from Syngine simultaneously, high numbers (>20) might yield a temporary block
-    'request_delay': '0.1'          # Minimum delay between filing concurrent seismogram requests (guidelines at https://ds.iris.edu/ds/nodes/dmc/services/usage/)
+    'request_delay': '0.1',         # Minimum delay between filing concurrent seismogram requests (guidelines at https://ds.iris.edu/ds/nodes/dmc/services/usage/)
+    'ray_resolution': '0.5',        # Step size in degrees to generate a ray parameter lookup table
 }
 
 def test_earthquakes():
