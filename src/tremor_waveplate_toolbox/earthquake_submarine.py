@@ -302,7 +302,7 @@ class EarthquakeSubmarine(Earthquake):
         - [Signal] signal containing fibre strain, shape [C, T, 1].
         """
         if self.water_compressible:
-            results_list = self.request_differential_pressures(path, step_length, duration, filter_frequencies, filter_taps, return_displacements_local, return_normal_accelerations, return_incompressible_differential_pressures, batch_size, worker_count, request_delay)
+            results_list = self.request_differential_pressures(path, step_length, duration, filter_frequencies, filter_taps, return_displacements_local, return_normal_accelerations, batch_size, worker_count, request_delay)
         else:
             assert return_differential_pressures == False, f"return_differential_pressures must be false for earthquake with no compressible water column"
             results_list = self.request_incompressible_differential_pressures(path, step_length, duration, filter_frequencies, filter_taps, return_displacements_local, return_normal_accelerations, batch_size, worker_count, request_delay)
