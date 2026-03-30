@@ -240,7 +240,7 @@ class EarthquakeSubmarine(Earthquake):
         - If return_incompressible_differential_pressures: [Signal] signal containing differential water pressure at the seafloor in Pa under the assumption of an incompressible water column, shape [C, T, 1].
         - [Signal] signal containing differential water pressure at the seafloor Pa, shape [C, T, 1].
         """
-        results_list = self.request_incompressible_differential_pressures(path, step_length, duration, return_displacements_local, batch_size, worker_count, request_delay)
+        results_list = self.request_incompressible_differential_pressures(path, step_length, duration, filter_frequencies, filter_taps, return_displacements_local, batch_size, worker_count, request_delay)
         incompressible_differential_pressures = results_list[-1]
 
         # Obtain ray parameter for each path vertex
