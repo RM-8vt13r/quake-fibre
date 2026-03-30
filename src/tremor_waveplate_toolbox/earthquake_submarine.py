@@ -65,8 +65,6 @@ class EarthquakeSubmarine(Earthquake):
             model = self.model.split('_')[0].lower()
             taup_model = op.taup.TauPyModel(model = model if model != 'ak135f' else 'ak135')
             EarthquakeSubmarine.RAY_PARAMETERS = []
-            import pdb
-            pdb.set_trace()
             for angle in EarthquakeSubmarine.RAY_ANGLES:
                 travel_times = taup_model.get_travel_times(
                         source_depth_in_km = self.origin.depth / 1000,
