@@ -191,7 +191,7 @@ class EarthquakeSubmarine(Earthquake):
         normal_accelerations = results_list[-1]
         
         incompressible_differential_pressures = Signal(
-            samples = self.water_density * self.water_depth * normal_accelerations,
+            samples = self.water_density * self.water_depth * normal_accelerations.samples_time,
             sample_rate = normal_accelerations.sample_rate
         )
 
