@@ -256,8 +256,9 @@ class EarthquakeSubmarine(Earthquake):
             where = normal_accelerations.frequency_angular[None, :, None] != 0
         )
         
-        return_list = results_list[:-1]
+        return_list = results_list[:-2]
         # if return_incompressible_differential_pressures: return_list.append(incompressible_differential_pressures)
+        if return_normal_accelerations: return_list.append(normal_accelerations)
         return_list.append(differential_pressures)
 
         logger.debug("Returning differential pressures")
