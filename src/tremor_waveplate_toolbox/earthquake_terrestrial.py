@@ -159,6 +159,8 @@ class EarthquakeTerrestrial(Earthquake):
                 path: Path,
                 step_length: float = None,
                 duration: float = None,
+                filter_frequencies: np.ndarray = None,
+                filter_taps: np.ndarray = None,
                 return_displacements_local: bool = False,
                 return_displacements_global: bool = False,
                 return_displacements_projected: bool = False,
@@ -186,6 +188,8 @@ class EarthquakeTerrestrial(Earthquake):
         - If return_displacements_projected: [Signal] signal containing displacement in m projected onto the path, shape [C-1, T, E] where E = 2 distinguishes between section beginnings and ends.
         - [Signal] signal containing strain projected onto the path, shape [C-1, T, 1].
         """
+        assert filter_frequencies is None and filter_taps is None
+
         results_list = self.request_projected_seismograms(path, step_length, duration, return_displacements_local, return_displacements_global, batch_size, worker_count, request_delay)
         displacements_projected = results_list[-1]
 
