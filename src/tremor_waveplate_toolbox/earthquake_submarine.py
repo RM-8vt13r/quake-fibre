@@ -213,7 +213,7 @@ class EarthquakeSubmarine(Earthquake):
                 filter_taps: np.ndarray = None,
                 return_displacements_local: bool = False,
                 return_normal_accelerations: bool = False,
-                return_incompressible_differential_pressures: bool = False,
+                # return_incompressible_differential_pressures: bool = False,
                 batch_size: int = None,
                 worker_count: int = 1,
                 request_delay: float = 0.1
@@ -257,7 +257,7 @@ class EarthquakeSubmarine(Earthquake):
         )
         
         return_list = results_list[:-1]
-        if return_incompressible_differential_pressures: return_list.append(incompressible_differential_pressures)
+        # if return_incompressible_differential_pressures: return_list.append(incompressible_differential_pressures)
         return_list.append(differential_pressures)
 
         logger.debug("Returning differential pressures")
@@ -271,7 +271,7 @@ class EarthquakeSubmarine(Earthquake):
                 filter_taps: np.ndarray = None,
                 return_displacements_local: bool = False,
                 return_normal_accelerations: bool = False,
-                return_incompressible_differential_pressures: bool = False,
+                # return_incompressible_differential_pressures: bool = False,
                 return_differential_pressures: bool = False,
                 batch_size: int = None,
                 worker_count: int = 1,
