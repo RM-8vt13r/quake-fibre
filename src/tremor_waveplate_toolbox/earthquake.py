@@ -313,30 +313,30 @@ class Earthquake(PerturbationEvent, ABC):
         logger.debug("Returning local seismograms")
         return earthquake_path, displacements_local
 
-    @override
-    def get_perturbations(self,
-                path: Path,
-                step_length: float = None,
-                duration: float = None,
-                filter_frequencies: np.ndarray = None,
-                filter_taps: np.ndarray = None,
-                batch_size: int = None,
-                worker_count: int = 1,
-                request_delay: float = 0.1
-            ) -> tuple[Perturbation]:
-        """
-        Create perturbations from this earthquake. See Earthquake.request_projected_strains() and PerturbationEvent.get_perturbation() for documentation details.
-        """
-        strains, = self.request_fibre_strains(path, step_length, duration, filter_frequencies, filter_taps, False, False, False, batch_size, worker_count, request_delay)
+    # @override
+    # def get_perturbations(self,
+    #             path: Path,
+    #             step_length: float = None,
+    #             filter_frequencies: np.ndarray = None,
+    #             filter_taps: np.ndarray = None,
+    #             duration: float = None,
+    #             batch_size: int = None,
+    #             worker_count: int = 1,
+    #             request_delay: float = 0.1
+    #         ) -> tuple[Perturbation]:
+    #     """
+    #     Create perturbations from this earthquake. See Earthquake.request_projected_strains() and PerturbationEvent.get_perturbation() for documentation details.
+    #     """
+    #     strains, = self.request_fibre_strains(path, step_length, duration, filter_frequencies, filter_taps, False, False, False, batch_size, worker_count, request_delay)
 
-        perturbation = Perturbation(
-                strains     = strains.samples_time[:, :, 0],
-                sample_rate = strains.sample_rate,
-                domain      = strains.domain
-            )
+    #     perturbation = Perturbation(
+    #             strains     = strains.samples_time[:, :, 0],
+    #             sample_rate = strains.sample_rate,
+    #             domain      = strains.domain
+    #         )
 
-        logger.debug("Returning earthquake perturbation")
-        return perturbation
+    #     logger.debug("Returning earthquake perturbation")
+    #     return perturbation
     
     @property
     def event(self):

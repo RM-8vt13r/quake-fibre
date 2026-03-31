@@ -57,7 +57,7 @@ class EarthquakeSubmarine(Earthquake):
             ):
             assert getattr(self, field) > 0, f"{field} must be >0, but was {field}"
 
-        if EarthquakeSubmarine.RAY_PARAMETERS is None or EarthquakeSubmarine.RAY_PARAMETERS[1] - EarthquakeSubmarine.RAY_PARAMETERS[0] > ray_resolution:
+        if (EarthquakeSubmarine.RAY_PARAMETERS is None or EarthquakeSubmarine.RAY_PARAMETERS[1] - EarthquakeSubmarine.RAY_PARAMETERS[0] > ray_resolution) and self.water_compressible:
             logger.info(f"Initialising ray parameters table with resolution {ray_resolution} degrees..")
 
             EarthquakeSubmarine.RAY_ANGLES = np.append(np.arange(0, 180, ray_resolution), 180)
@@ -152,68 +152,12 @@ class EarthquakeSubmarine(Earthquake):
         logger.debug("Returning normal accelerations")
         return return_list
 
-    def request_incompressible_differential_pressures(self,
-                path: Path,
-                step_length: float = None,
-                duration: float = None,
-                filter_frequencies: np.ndarray = None,
-                filter_taps: np.ndarray = None,
-                return_displacements_local: bool = False,
-                return_normal_accelerations: bool = False,
-                batch_size: int = None,
-                worker_count: int = 1,
-                request_delay: float = 0.1
-            ):
-        """
-        Interpreting longitudes and latitudes as chronological path coordinates, obtain differential seafloor water pressure at each edge center of this path, assuming an incompressible water column.
-
-        Inputs:
-        - path [Path]: Fibre path with C edges
-        - step_length [float]: if not None, request earthquakes at I points along path spaced step_length apart in km.
-        - duration [float]: duration from the earthquake origin for which to synthesize seismograms. If None, synthesize the whole event.
-        - filter_frequencies [np.ndarray]: temporary toolbox function. If not None, define a frequency-domain filter with which to filter obtained differential pressures.
-        - filter_taps [np.ndarray]: temporary toolbox function. If not None, define a frequency-domain filter with which to filter obtained differential pressures.
-        - return_displacements_local [bool]: if True, return displacements in local and global coordinates.
-        - return_normal_accelerations [bool]: if True, return acceleration of the seafloor away from the earth's centre.
-        - batch_size [int]: how many seismograms to request simultaneously; defaults to C
-        - worker_count [int]: how many Syngine requests to make at most in parallel
-        - request_delay [float]: minimum delay in seconds between launching two Syngine requests
-        
-        Outputs:
-        - If return_displacements_local: [Signal] signal containing all three displacement components in m, relative to local coordinates, shape [I, T, D] where D indexes longitudinal, latitudinal, and normal components in that order
-        - If return_normal_accelerations: [Signal] signal containing normal seafloor acceleration in m / s2, shape [C, T, 1]
-        - [Signal] signal containing differential water pressure at the seafloor in Pa under the assumption of an incompressible water column, shape [C, T, 1].
-        """
-        if filter_frequencies is not None or filter_taps is not None:
-            assert filter_frequencies is not None and filter_taps is not None, f"filter_frequencies and filter_taps must both be None or not None, but were {filter_frequencies} and {filter_taps}"
-
-        results_list = self.request_normal_accelerations(path, step_length, duration, return_displacements_local, batch_size, worker_count, request_delay)
-        normal_accelerations = results_list[-1]
-        
-        incompressible_differential_pressures = Signal(
-            samples = self.water_density * self.water_depth * normal_accelerations.samples_time,
-            sample_rate = normal_accelerations.sample_rate
-        )
-
-        if filter_frequencies is not None:
-            incompressible_differential_pressures.samples_frequency *= np.interp(incompressible_differential_pressures.frequency % incompressible_differential_pressures.bandwidth, filter_frequencies, filter_taps)[None, :, None]
-        
-        return_list = results_list[:-1]
-        if return_normal_accelerations: return_list.append(normal_accelerations)
-        return_list.append(incompressible_differential_pressures)
-
-        logger.debug("Returning incompressible differential pressures")
-        return return_list
-
     def request_differential_pressures(self,
                 path: Path,
                 step_length: float = None,
                 duration: float = None,
-                filter_frequencies: np.ndarray = None,
-                filter_taps: np.ndarray = None,
                 return_displacements_local: bool = False,
                 return_normal_accelerations: bool = False,
-                # return_incompressible_differential_pressures: bool = False,
                 batch_size: int = None,
                 worker_count: int = 1,
                 request_delay: float = 0.1
@@ -225,11 +169,8 @@ class EarthquakeSubmarine(Earthquake):
         - path [Path]: Fibre path with C edges
         - step_length [float]: if not None, request earthquakes at I points along path spaced step_length apart in km.
         - duration [float]: duration from the earthquake origin for which to synthesize seismograms. If None, synthesize the whole event.
-        - filter_frequencies [np.ndarray]: temporary toolbox function. If not None, define a frequency-domain filter with which to filter obtained differential pressures.
-        - filter_taps [np.ndarray]: temporary toolbox function. If not None, define a frequency-domain filter with which to filter obtained differential pressures.
         - return_displacements_local [bool]: if True, return displacements in local and global coordinates.
         - return_normal_accelerations [bool]: if True, return acceleration of the seafloor away from the earth's centre.
-        - return_incompressible_differential_pressures [bool]: if True, return differential pressures at the seafloor when the seawater is incompressible.
         - batch_size [int]: how many seismograms to request simultaneously; defaults to C
         - worker_count [int]: how many Syngine requests to make at most in parallel
         - request_delay [float]: minimum delay in seconds between launching two Syngine requests
@@ -237,42 +178,42 @@ class EarthquakeSubmarine(Earthquake):
         Outputs:
         - If return_displacements_local: [Signal] signal containing all three displacement components in m, relative to local coordinates, shape [I, T, D] where D indexes longitudinal, latitudinal, and normal components in that order
         - If return_normal_accelerations: [Signal] signal containing normal seafloor acceleration in m / s2, shape [C, T, 1]
-        - If return_incompressible_differential_pressures: [Signal] signal containing differential water pressure at the seafloor in Pa under the assumption of an incompressible water column, shape [C, T, 1].
         - [Signal] signal containing differential water pressure at the seafloor Pa, shape [C, T, 1].
         """
-        results_list = self.request_incompressible_differential_pressures(path, step_length, duration, filter_frequencies, filter_taps, return_displacements_local, True, batch_size, worker_count, request_delay)
-        normal_accelerations, incompressible_differential_pressures = results_list[-2:]
-
-        # Obtain ray parameter for each path vertex
-        distance_angles = op.geodetics.base.locations2degrees(path.centre_latitudes, path.centre_longitudes, self.origin.latitude, self.origin.longitude)
-        ray_parameters  = np.interp(distance_angles, EarthquakeSubmarine.RAY_ANGLES, EarthquakeSubmarine.RAY_PARAMETERS)
-
-        constants = np.sqrt(1 - ray_parameters ** 2 * self.water_sound_velocity ** 2)
-        differential_pressures = incompressible_differential_pressures.copy()
-        np.divide(
-            differential_pressures.samples_frequency * self.water_sound_velocity * np.tan(normal_accelerations.frequency_angular[None, :, None] * self.water_depth * constants[:, None, None] / self.water_sound_velocity),
-            normal_accelerations.frequency_angular[None, :, None] * self.water_depth * constants[:, None, None],
-            out = differential_pressures.samples_frequency,
-            where = normal_accelerations.frequency_angular[None, :, None] != 0
-        )
+        results_list = self.request_normal_accelerations(path, step_length, duration, return_displacements_local, batch_size, worker_count, request_delay)
+        normal_accelerations = results_list[-1]
         
-        return_list = results_list[:-2]
-        # if return_incompressible_differential_pressures: return_list.append(incompressible_differential_pressures)
+        differential_pressures = Signal(
+            samples = self.water_density * self.water_depth * normal_accelerations.samples_time,
+            sample_rate = normal_accelerations.sample_rate
+        )
+
+        if self.water_compressible:
+            distance_angles = op.geodetics.base.locations2degrees(path.centre_latitudes, path.centre_longitudes, self.origin.latitude, self.origin.longitude)
+            ray_parameters  = np.interp(distance_angles, EarthquakeSubmarine.RAY_ANGLES, EarthquakeSubmarine.RAY_PARAMETERS)
+
+            constants = np.sqrt(1 - ray_parameters ** 2 * self.water_sound_velocity ** 2)
+            np.divide(
+                differential_pressures.samples_frequency * self.water_sound_velocity * np.tan(normal_accelerations.frequency_angular[None, :, None] * self.water_depth * constants[:, None, None] / self.water_sound_velocity),
+                normal_accelerations.frequency_angular[None, :, None] * self.water_depth * constants[:, None, None],
+                out = differential_pressures.samples_frequency,
+                where = normal_accelerations.frequency_angular[None, :, None] != 0
+            )
+        
+        return_list = results_list[:-1]
         if return_normal_accelerations: return_list.append(normal_accelerations)
-        return_list.append(differential_pressures)
+        return_list.append(incompressible_differential_pressures)
 
         logger.debug("Returning differential pressures")
         return return_list
 
+    @override
     def request_fibre_strains(self,
                 path: Path,
                 step_length: float = None,
                 duration: float = None,
-                filter_frequencies: np.ndarray = None,
-                filter_taps: np.ndarray = None,
                 return_displacements_local: bool = False,
                 return_normal_accelerations: bool = False,
-                # return_incompressible_differential_pressures: bool = False,
                 return_differential_pressures: bool = False,
                 batch_size: int = None,
                 worker_count: int = 1,
@@ -285,12 +226,9 @@ class EarthquakeSubmarine(Earthquake):
         - path [Path]: Fibre path with C edges
         - step_length [float]: if not None, request earthquakes at I points along path spaced step_length apart in km. Then, interpolate the results back to every edge centre along path to calculate strains.
         - duration [float]: duration from the earthquake origin for which to synthesize seismograms. If None, synthesize the whole event.
-        - filter_frequencies [np.ndarray]: temporary toolbox function. If not None, define a frequency-domain filter with which to filter obtained differential pressures.
-        - filter_taps [np.ndarray]: temporary toolbox function. If not None, define a frequency-domain filter with which to filter obtained differential pressures.
         - return_displacements_local [bool]: if True, return displacements in local and global coordinates.
         - return_normal_accelerations [bool]: if True, return acceleration of the seafloor away from the earth's centre.
         - return_differential_pressures [bool]: if True, return differential water pressure at the sea floor.
-        - return_incompressible_differential_pressures [bool]: if True, return differential pressures at the seafloor when the seawater is incompressible.
         - batch_size [int]: how many seismograms to request simultaneously; defaults to C
         - worker_count [int]: how many Syngine requests to make at most in parallel
         - request_delay [float]: minimum delay in seconds between launching two Syngine requests
@@ -298,16 +236,10 @@ class EarthquakeSubmarine(Earthquake):
         Outputs:
         - If return_displacements_local: [Signal] signal containing all three displacement components in m, relative to local coordinates, shape [I, T, D] where D indexes longitudinal, latitudinal, and normal components in that order
         - If return_normal_accelerations: [Signal] signal containing normal seafloor acceleration in m / s2, shape [C, T, 1]
-        - If return_incompressible_differential_pressures: [Signal] signal containing differential water pressure at the seafloor in Pa under the assumption of an incompressible water column, shape [C, T, 1].
         - If return_differential_pressures: [Signal] signal containing differential water pressure at the seafloor Pa, shape [C, T, 1].
         - [Signal] signal containing fibre strain, shape [C, T, 1].
         """
-        if self.water_compressible:
-            results_list = self.request_differential_pressures(path, step_length, duration, filter_frequencies, filter_taps, return_displacements_local, return_normal_accelerations, batch_size, worker_count, request_delay)
-        else:
-            assert return_differential_pressures == False, f"return_differential_pressures must be false for earthquake with no compressible water column"
-            results_list = self.request_incompressible_differential_pressures(path, step_length, duration, filter_frequencies, filter_taps, return_displacements_local, return_normal_accelerations, batch_size, worker_count, request_delay)
-        
+        results_list = self.request_differential_pressures(path, step_length, duration, return_displacements_local, return_normal_accelerations, batch_size, worker_count, request_delay)
         differential_pressures = results_list[-1]
 
         fibre_strains = Signal(
