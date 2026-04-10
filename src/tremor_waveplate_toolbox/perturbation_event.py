@@ -42,7 +42,7 @@ class PerturbationEvent(ABC):
         """
         return (None,)
 
-    @abstractmethod
+    # @abstractmethod
     def get_perturbations(self, path: Path, step_length: float = None, filter_frequencies: np.ndarray = None, filter_taps: np.ndarray = None, *args, **kwargs) -> tuple:
         """
         Obtain the perturbations over time along a given path.
