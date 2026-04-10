@@ -202,7 +202,7 @@ class EarthquakeSubmarine(Earthquake):
         
         return_list = results_list[:-1]
         if return_normal_accelerations: return_list.append(normal_accelerations)
-        return_list.append(incompressible_differential_pressures)
+        return_list.append(differential_pressures)
 
         logger.debug("Returning differential pressures")
         return return_list
