@@ -122,6 +122,7 @@ class Fibre(ABC):
         """
         Initialise fibre- and step path information.
         """
+        logger.info("Generating fibre path..")
         if self._path is not None:
             self._span_path = self.path.interpolated(self._span_length)
 
@@ -160,6 +161,7 @@ class Fibre(ABC):
         Generate differential phase shifts, group delays, and major axes orientations or scramblers.
         """
         if self.polarisation_mode_dispersion != 0.:
+            logger.info("Generating fibre birefringence realisations..")
             match self.modulus_model:
                 case ModulusModel.FIXED:  self._init_birefringence_fixed()
                 case ModulusModel.RANDOM: self._init_birefringence_random()

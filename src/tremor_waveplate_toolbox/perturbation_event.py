@@ -55,8 +55,8 @@ class PerturbationEvent(ABC):
         Outputs:
         - [tuple] the Perturbations along the path over time, resulting from this event. Shape [K, T], where K is the number of path segments and T the number of time samples.
         """
-        strains, = self.request_fibre_strains(path = path, step_length = step_length, *args, **kwargs)
-        twists,  = self.request_fibre_twists(path = path, step_length = step_length, *args, **kwargs)
+        strains = self.request_fibre_strains(path = path, step_length = step_length, *args, **kwargs)
+        twists  = self.request_fibre_twists(path = path, step_length = step_length, *args, **kwargs)
 
         assert strains is None or twists is None or (strains.shape == twists.shape and strains.sample_rate == twists.sample_rate), f"Strains and twists must have the same shape and sample rate"
 
