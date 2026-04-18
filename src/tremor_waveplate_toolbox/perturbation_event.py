@@ -14,7 +14,7 @@ class PerturbationEvent(ABC):
         super().__init__()
 
     def __call__(self, path: Path, step_length: float = None, *args, **kwargs):
-        return self.get_perturbations(path, step_length, *args, **kwargs)
+        return self.request_perturbations(path, step_length, *args, **kwargs)
 
     def request_fibre_strains(self, path: Path, step_length: float = None, *args, **kwargs) -> Signal:
         """
@@ -42,8 +42,7 @@ class PerturbationEvent(ABC):
         """
         return (None,)
 
-    # @abstractmethod
-    def get_perturbations(self, path: Path, step_length: float = None, filter_frequencies: np.ndarray = None, filter_taps: np.ndarray = None, *args, **kwargs) -> tuple:
+    def request_perturbations(self, path: Path, step_length: float = None, filter_frequencies: np.ndarray = None, filter_taps: np.ndarray = None, *args, **kwargs) -> tuple:
         """
         Obtain the perturbations over time along a given path.
 

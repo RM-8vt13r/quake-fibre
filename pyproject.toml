@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "tremor-waveplate-toolbox"
-version = "2026.04.10"
+version = "2026.04.18"
 description = "Dual-polarisation transmission through an optical fibre undergoing earthquake perturbations."
 readme = {file = "README.md", content-type = "text/markdown"}
 
@@ -87,5 +87,6 @@ testing = [
     "pytest",
     "matplotlib",
     "cartopy",
-    "tqdm"
+    "tqdm",
+    "scikit-image"
 ]

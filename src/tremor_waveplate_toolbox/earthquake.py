@@ -140,9 +140,9 @@ class Earthquake(PerturbationEvent, ABC):
             batch_size: int,
             worker_count: int,
             request_delay: float
-        ) -> (Path, np.ndarray, float, int):
+        ) -> (Path, int):
         """
-        Part of request_local_seismograms() that requests seismograms from Syngine by HTTP request.
+        Part of request_local_seismograms() that verifies and prepares the parameters before sending requests to Syngine.
         """
         earthquake_path = path if step_length is None else path.interpolated(step_length)
 
@@ -157,7 +157,7 @@ class Earthquake(PerturbationEvent, ABC):
             assert isinstance(duration, (int, np.integer, float, np.floating)), f"duration should have type float, but was a {type(duration)}"
             assert duration > 0, f"duration must be positive, but wasn't"
             
-        return earthquake_path, duration, batch_size
+        return earthquake_path, batch_size
 
     @abstractmethod
     def _local_seismograms_build_batches(self,
@@ -284,7 +284,7 @@ class Earthquake(PerturbationEvent, ABC):
                 batch_size: int = None,
                 worker_count: int = 1,
                 request_delay: float = 0.1
-            ):
+            ) -> (Path, Signal):
         """
         Request seismograms from Syngine at specified coordinates, on the local (longitude, latitude, normal) axes at each coordinate.
 
@@ -300,7 +300,7 @@ class Earthquake(PerturbationEvent, ABC):
         - [Path] interpolated version of path with vertices spaced step_length km apart
         - [Signal] signal containing all three displacement components in m, shape [I, T, D] where D indexes longitudinal, latitudinal, and normal components in that order.
         """
-        earthquake_path, duration, batch_size = self._local_seismograms_preprocess(path, step_length, duration, batch_size, worker_count, request_delay)
+        earthquake_path, batch_size = self._local_seismograms_preprocess(path, step_length, duration, batch_size, worker_count, request_delay)
         coordinate_batch_count, batch_coordinates, batch_coordinate_starts, batch_coordinate_stops = self._local_seismograms_build_batches(earthquake_path, batch_size)
         syngine_stream = self._local_seismograms_send_requests(duration, coordinate_batch_count, batch_coordinates, batch_coordinate_starts, batch_coordinate_stops, worker_count, request_delay)
         displacements, sample_time = self._local_seismograms_postprocess(earthquake_path, syngine_stream)

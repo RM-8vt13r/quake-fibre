@@ -169,13 +169,11 @@ class Path:
         return self.vertex_count
 
     def __eq__(self, other):
-        if self.vertex_count == other.vertex_count and \
+        return self.vertex_count == other.vertex_count and \
             np.all(self._longitudes == other._longitudes) and \
             np.all(self._latitudes == other._latitudes) and \
-            np.all(self.lengths == other.lengths):
-            return True
-        return False
-
+            np.all(self.lengths == other.lengths)
+            
     @property
     def lengths(self):
         """

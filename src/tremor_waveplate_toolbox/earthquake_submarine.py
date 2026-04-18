@@ -107,82 +107,50 @@ class EarthquakeSubmarine(Earthquake):
 
         return normal_displacements_interpolated
 
-    def request_normal_accelerations(self,
+    def get_normal_accelerations(self,
+                local_seismograms: Signal,
                 path: Path,
-                step_length: float = None,
-                duration: float = None,
-                return_displacements_local: bool = False,
-                batch_size: int = None,
-                worker_count: int = 1,
-                request_delay: float = 0.1
-            ):
+                earthquake_path: Path,
+            ) -> Signal:
         """
         Request seismograms from Syngine at fibre section centres, and transform them to normal seafloor acceleration at each coordinate.
 
         Inputs:
+        - local_seismograms [Signal]: signal containing all three displacement components in m, relative to local coordinates, shape [I, T, D] where D indexes longitudinal, latitudinal, and normal components in that order
         - path [Path]: Fibre path with C edges
-        - step_length [float]: if not None, request earthquakes at I points along path spaced step_length apart in km.
-        - duration [float]: duration from the earthquake origin for which to synthesize seismograms. If None, synthesize the whole event.
-        - return_displacements_local [bool]: if True, return displacements in local and global coordinates.
-        - batch_size [int]: how many seismograms to request simultaneously; defaults to C
-        - worker_count [int]: how many Syngine requests to make at most in parallel
-        - request_delay [float]: minimum delay in seconds between launching two Syngine requests
+        - earthquake_path [Path]: interpolated version of path with vertices spaced step_length km apart
         
         Outputs:
-        - If return_displacements_local: [Signal] signal containing all three displacement components in m, relative to local coordinates, shape [I, T, D] where D indexes longitudinal, latitudinal, and normal components in that order
         - [Signal] signal containing normal seafloor acceleration in m / s2, shape [C, T, 1].
         """
-        earthquake_path, displacements_local = self.request_local_seismograms(path, step_length, duration, batch_size, worker_count, request_delay)
-
-        normal_displacements = np.zeros(shape = (path.edge_count, displacements_local.shape[1] + 2, 1))
-        if step_length is not None:
-            normal_displacements[:, 1:-1] = self._normal_displacements_interpolate(earthquake_path, path, displacements_local.samples_time[:, :, 2, None])
+        normal_displacements = np.zeros(shape = (path.edge_count, local_seismograms.shape[1] + 2, 1))
+        if earthquake_path != path:
+            normal_displacements[:, 1:-1] = self._normal_displacements_interpolate(earthquake_path, path, local_seismograms.samples_time[:, :, 2, None])
         else:
-            normal_displacements[:, 1:-1] = displacements_local.samples_time[:, :, 2, None]
+            normal_displacements[:, 1:-1] = local_seismograms.samples_time[:, :, 2, None]
 
         normal_accelerations = Signal(
-            samples = (normal_displacements[:, :-2] - 2 * normal_displacements[:, 1:-1] + normal_displacements[:, 2:]) * displacements_local.sample_rate ** 2,
-            sample_rate = displacements_local.sample_rate
+            samples = (normal_displacements[:, :-2] - 2 * normal_displacements[:, 1:-1] + normal_displacements[:, 2:]) * local_seismograms.sample_rate ** 2,
+            sample_rate = local_seismograms.sample_rate
         )
 
-        return_list = []
-        if return_displacements_local: return_list.append(displacements_local)
-        return_list.append(normal_accelerations)
-
         logger.debug("Returning normal accelerations")
-        return return_list
+        return normal_accelerations
 
-    def request_differential_pressures(self,
-                path: Path,
-                step_length: float = None,
-                duration: float = None,
-                return_displacements_local: bool = False,
-                return_normal_accelerations: bool = False,
-                batch_size: int = None,
-                worker_count: int = 1,
-                request_delay: float = 0.1
-            ):
+    def get_differential_pressures(self,
+                normal_accelerations: Signal,
+                path: Path
+            ) -> Signal:
         """
         Interpreting longitudes and latitudes as chronological path coordinates, obtain differential seafloor water pressure at each edge center of this path.
 
         Inputs:
+        - normal_accelerations: [Signal] signal containing normal seafloor acceleration in m / s2, shape [C, T, 1]
         - path [Path]: Fibre path with C edges
-        - step_length [float]: if not None, request earthquakes at I points along path spaced step_length apart in km.
-        - duration [float]: duration from the earthquake origin for which to synthesize seismograms. If None, synthesize the whole event.
-        - return_displacements_local [bool]: if True, return displacements in local and global coordinates.
-        - return_normal_accelerations [bool]: if True, return acceleration of the seafloor away from the earth's centre.
-        - batch_size [int]: how many seismograms to request simultaneously; defaults to C
-        - worker_count [int]: how many Syngine requests to make at most in parallel
-        - request_delay [float]: minimum delay in seconds between launching two Syngine requests
         
         Outputs:
-        - If return_displacements_local: [Signal] signal containing all three displacement components in m, relative to local coordinates, shape [I, T, D] where D indexes longitudinal, latitudinal, and normal components in that order
-        - If return_normal_accelerations: [Signal] signal containing normal seafloor acceleration in m / s2, shape [C, T, 1]
         - [Signal] signal containing differential water pressure at the seafloor Pa, shape [C, T, 1].
         """
-        results_list = self.request_normal_accelerations(path, step_length, duration, return_displacements_local, batch_size, worker_count, request_delay)
-        normal_accelerations = results_list[-1]
-        
         differential_pressures = Signal(
             samples = self.water_density * self.water_depth * normal_accelerations.samples_time,
             sample_rate = normal_accelerations.sample_rate
@@ -200,59 +168,65 @@ class EarthquakeSubmarine(Earthquake):
                 where = normal_accelerations.frequency_angular[None, :, None] != 0
             )
         
-        return_list = results_list[:-1]
-        if return_normal_accelerations: return_list.append(normal_accelerations)
-        return_list.append(differential_pressures)
-
         logger.debug("Returning differential pressures")
-        return return_list
+        return differential_pressures
 
-    @override
-    def request_fibre_strains(self,
-                path: Path,
-                step_length: float = None,
-                duration: float = None,
-                return_displacements_local: bool = False,
-                return_normal_accelerations: bool = False,
-                return_differential_pressures: bool = False,
-                batch_size: int = None,
-                worker_count: int = 1,
-                request_delay: float = 0.1
-            ):
+    def get_fibre_strains(self,
+                differential_pressures: Signal
+            ) -> Signal:
         """
-        Interpreting longitudes and latitudes as chronological path coordinates, request the longitudinal material strain on each path section by scaling the water pressure differences.
+        Calculate longitudinal material strain by scaling the water pressure differences.
 
         Inputs:
-        - path [Path]: Fibre path with C edges
-        - step_length [float]: if not None, request earthquakes at I points along path spaced step_length apart in km. Then, interpolate the results back to every edge centre along path to calculate strains.
-        - duration [float]: duration from the earthquake origin for which to synthesize seismograms. If None, synthesize the whole event.
-        - return_displacements_local [bool]: if True, return displacements in local and global coordinates.
-        - return_normal_accelerations [bool]: if True, return acceleration of the seafloor away from the earth's centre.
-        - return_differential_pressures [bool]: if True, return differential water pressure at the sea floor.
-        - batch_size [int]: how many seismograms to request simultaneously; defaults to C
-        - worker_count [int]: how many Syngine requests to make at most in parallel
-        - request_delay [float]: minimum delay in seconds between launching two Syngine requests
+        - differential_pressures: [Signal] signal containing differential water pressure at the seafloor Pa, shape [C, T, 1].
 
         Outputs:
-        - If return_displacements_local: [Signal] signal containing all three displacement components in m, relative to local coordinates, shape [I, T, D] where D indexes longitudinal, latitudinal, and normal components in that order
-        - If return_normal_accelerations: [Signal] signal containing normal seafloor acceleration in m / s2, shape [C, T, 1]
-        - If return_differential_pressures: [Signal] signal containing differential water pressure at the seafloor Pa, shape [C, T, 1].
         - [Signal] signal containing fibre strain, shape [C, T, 1].
         """
-        results_list = self.request_differential_pressures(path, step_length, duration, return_displacements_local, return_normal_accelerations, batch_size, worker_count, request_delay)
-        differential_pressures = results_list[-1]
-
         fibre_strains = Signal(
             samples = self.strain_coefficient * differential_pressures.samples_time,
             sample_rate = differential_pressures.sample_rate
         )
 
-        return_list = results_list[:-1]
-        if return_differential_pressures: return_list.append(differential_pressures)
-        return_list.append(fibre_strains)
-
         logger.debug("Returning fibre strains")
-        return return_list
+        return fibre_strains
+
+    @override
+    def request_fibre_strains(self,
+            path,
+            step_length,
+            duration,
+            batch_size,
+            worker_count,
+            request_delay
+        ) -> Signal:
+        """
+        Interpreting longitudes and latitudes as chronological path coordinates, request the longitudinal material strain on each path section from Syngine.
+
+        Inputs:
+        - path [Path]: coordinates, length C
+        - step_length [float]: if not None, request earthquakes at I points along path spaced step_length apart in km.
+        - duration [float]: duration from the earthquake origin for which to synthesize seismograms. If None, synthesize the whole event.
+        - batch_size [int]: how many seismograms to request simultaneously; defaults to C
+        - worker_count [int]: how many Syngine requests to make at most in parallel
+        - request_delay [float]: minimum delay in seconds between launching two Syngine requests
+
+        Outputs:
+        - [Signal] signal containing fibre strain, shape [C, T, 1].
+        """
+        earthquake_path, local_seismograms = self.request_local_seismograms(path, step_length, duration, batch_size, worker_count, request_delay)
+
+        normal_accelerations = self.get_normal_accelerations(local_seismograms, path, earthquake_path)
+        del earthquake_path
+        del local_seismograms
+
+        differential_pressures = self.get_differential_pressures(normal_accelerations, path)
+        del normal_accelerations
+
+        fibre_strains = self.get_fibre_strains(differential_pressures)
+        del differential_pressures
+
+        return fibre_strains
 
     @property
     def water_sound_velocity(self):
