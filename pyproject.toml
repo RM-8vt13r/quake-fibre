@@ -85,7 +85,5 @@ cuda11x-local = [
 
 testing = [
     "pytest",
-    "matplotlib",
-    "cartopy",
     "tqdm"
 ]
