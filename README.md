@@ -29,7 +29,8 @@ This repository is the implementation of [\[4\]](#4).
       ```
       On a system with a compatible [CUDA Toolkit](https://developer.nvidia.com/cuda-toolkit) installation: `quakefibre[cuda..x]`, replacing `..` with `11`, `12` or `13`.  
       On a system without a compatible CUDA installation, but with a CUDA-enabled GPU: `quakefibre[cuda..x-local]`.  
-      If you intend to run the scripts in `scripts` or unittests in `tests`: `quakefibre[testing]`
+      If you intend to run the scripts in `scripts` or unittests in `tests`: `quakefibre[testing]`.  
+      Note that tags can be combined, e.g., `quakefibre[testing,cuda..x-local]`.  
 
 
 ## Testing and scripts
@@ -87,7 +88,7 @@ Jul. 2017.
 DOI: [10.1785/0220160210](https://doi.org/10.1785/0220160210)
 
 <a name="2">\[2\]</a>
-A. Mecozzi, M. Cantono, J.C. Castellanos, *et al.*,
+A. Mecozzi, M. Cantono, J. C. Castellanos, *et al.*,
 "Polarization Sensing using Submarine Optical Cables,"
 *Opt.*,
 vol. 8, no. 6, pp. 788&ndash;795,
