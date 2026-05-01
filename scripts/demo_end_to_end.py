@@ -104,8 +104,6 @@ if __name__ == '__main__':
                 kwargs = {
                     'path'               : piece_step_path,
                     'step_length'        : parameters.getfloat('EARTHQUAKE', 'step_length'),
-                    'filter_frequencies' : filter_frequencies,
-                    'filter_taps'        : filter_taps,
                     'duration'           : parameters.getfloat('EARTHQUAKE', 'duration'),
                     'batch_size'         : parameters.getint('EARTHQUAKE', 'batch_size'),
                     'worker_count'       : parameters.getint('EARTHQUAKE', 'worker_count'),
