@@ -3,8 +3,8 @@ requires = ["hatchling >= 1.26"]
 build-backend = "hatchling.build"
 
 [project]
-name = "tremor-waveplate-toolbox"
-version = "2026.04.18"
+name = "quakefibre"
+version = "2026.05.01"
 description = "Dual-polarisation transmission through an optical fibre undergoing earthquake perturbations."
 readme = {file = "README.md", content-type = "text/markdown"}
 
@@ -19,12 +19,12 @@ keywords = [
     "Waveplate",
     "Optical fibre",
     "Earthquake",
-    "Differential group delay",
-    "Polarisation mode dispersion",
-    "State of polarisation"
+    "Birefringence",
+    "Dual-polarisation",
+    "Split-step"
 ]
 classifiers = [
-    "Development Status :: 2 - Pre-Alpha",
+    "Development Status :: 5 - Production/Stable",
     "Environment :: GPU :: NVIDIA CUDA",
     "Intended Audience :: Information Technology",
     "Intended Audience :: Science/Research",
@@ -52,8 +52,8 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://gitlab.tue.nl/r.m.butler/tremor-waveplate-toolbox"
-Repository = "https://gitlab.tue.nl/r.m.butler/tremor-waveplate-toolbox"
+Homepage = "https://github.com/RM-8vt13r/quake-fibre/"
+Repository = "https://github.com/RM-8vt13r/quake-fibre/"
 
 [project.optional-dependencies]
 cuda13x = [
@@ -87,6 +87,5 @@ testing = [
     "pytest",
     "matplotlib",
     "cartopy",
-    "tqdm",
-    "scikit-image"
+    "tqdm"
 ]

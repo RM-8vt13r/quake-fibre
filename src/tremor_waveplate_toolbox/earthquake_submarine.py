@@ -37,7 +37,7 @@ class EarthquakeSubmarine(Earthquake):
         assert 'water_sound_velocity' in parameters['EARTHQUAKE'], "'water_sound_velocity' is missing from parameters section 'EARTHQUAKE'."
         assert 'water_density'        in parameters['EARTHQUAKE'], "'water_density' is missing from parameters section 'EARTHQUAKE'."
         assert 'water_depth'          in parameters['EARTHQUAKE'], "'water_depth' is missing from parameters section 'EARTHQUAKE'."
-        assert 'water_compressible'   in parameters['EARTHQUAKE'], "'compressible' is missing from parameters section 'EARTHQUAKE'"
+        assert 'water_compressible'   in parameters['EARTHQUAKE'], "'water_compressible' is missing from parameters section 'EARTHQUAKE'"
         assert 'strain_coefficient'   in parameters['EARTHQUAKE'], "'strain_coefficient' is missing from parameters section 'EARTHQUAKE'."
         assert 'ray_resolution'       in parameters['EARTHQUAKE'], "'ray_resolution' is missing from parameters section 'EARTHQUAKE'"
         
@@ -88,24 +88,27 @@ class EarthquakeSubmarine(Earthquake):
         return super()._local_seismograms_build_batches(earthquake_path.centre_coordinates, batch_size)
 
     @override
-    def _local_seismograms_postprocess(self, earthquake_path: Path, syngine_stream: list):
+    def _local_seismograms_postprocess(self,
+                earthquake_path: Path,
+                syngine_stream: list
+            ):
         return super()._local_seismograms_postprocess(earthquake_path.edge_count, syngine_stream)
 
-    def _normal_displacements_interpolate(self, earthquake_path: Path, path: Path, normal_displacements: np.ndarray):
+    def _normal_accelerations_interpolate(self, earthquake_path: Path, path: Path, normal_accelerations: np.ndarray):
         """
-        Part of request_normal_accelerations() that interpolates sparsely obtained normal displacements to a denser path.
+        Part of request_normal_accelerations() that interpolates sparsely obtained normal accelerations to a denser path.
         """
-        normal_displacements_interpolated_flattened = np.zeros(shape = (normal_displacements.shape[-2], path.edge_count)) # [T, C]
-        normal_displacements_flattened = normal_displacements[:, :, 0].transpose() # [I, T, 1] -> [T, I]
+        normal_accelerations_interpolated_flattened = np.zeros(shape = (normal_accelerations.shape[-2], path.edge_count)) # [T, C]
+        normal_accelerations_flattened = normal_accelerations[:, :, 0].transpose() # [I, T, 1] -> [T, I]
 
-        for channel_index, normal_displacement_flattened in enumerate(normal_displacements_flattened):
-            normal_displacements_interpolated_flattened[channel_index] = np.interp(path.centre_positions, earthquake_path.centre_positions, normal_displacement_flattened)
+        for channel_index, normal_acceleration_flattened in enumerate(normal_accelerations_flattened):
+            normal_accelerations_interpolated_flattened[channel_index] = np.interp(path.centre_positions, earthquake_path.centre_positions, normal_acceleration_flattened)
 
-        normal_displacements_interpolated = normal_displacements_interpolated_flattened.transpose()[:, :, None] # [T, C] -> [C, T, 1]
+        normal_accelerations_interpolated = normal_accelerations_interpolated_flattened.transpose()[:, :, None] # [T, C] -> [C, T, 1]
 
-        logger.info(f"Normal displacements interpolated from {earthquake_path.edge_count} sections to {path.edge_count} sections")
+        logger.info(f"Normal accelerations interpolated from {earthquake_path.edge_count} sections to {path.edge_count} sections")
 
-        return normal_displacements_interpolated
+        return normal_accelerations_interpolated
 
     def get_normal_accelerations(self,
                 local_seismograms: Signal,
@@ -118,21 +121,20 @@ class EarthquakeSubmarine(Earthquake):
         Inputs:
         - local_seismograms [Signal]: signal containing all three displacement components in m, relative to local coordinates, shape [I, T, D] where D indexes longitudinal, latitudinal, and normal components in that order
         - path [Path]: Fibre path with C edges
-        - earthquake_path [Path]: interpolated version of path with vertices spaced step_length km apart
+        - earthquake_path [Path]: interpolated version of path with I edges of step_length km
         
         Outputs:
         - [Signal] signal containing normal seafloor acceleration in m / s2, shape [C, T, 1].
         """
-        normal_displacements = np.zeros(shape = (path.edge_count, local_seismograms.shape[1] + 2, 1))
-        if earthquake_path != path:
-            normal_displacements[:, 1:-1] = self._normal_displacements_interpolate(earthquake_path, path, local_seismograms.samples_time[:, :, 2, None])
-        else:
-            normal_displacements[:, 1:-1] = local_seismograms.samples_time[:, :, 2, None]
-
+        normal_displacements = np.zeros(shape = (earthquake_path.edge_count, local_seismograms.shape[1] + 2, 1))
+        normal_displacements[:, 1:-1] = local_seismograms.samples_time[:, :, 2, None]
         normal_accelerations = Signal(
             samples = (normal_displacements[:, :-2] - 2 * normal_displacements[:, 1:-1] + normal_displacements[:, 2:]) * local_seismograms.sample_rate ** 2,
             sample_rate = local_seismograms.sample_rate
         )
+
+        if earthquake_path != path:
+            normal_accelerations.samples_time = self._normal_accelerations_interpolate(earthquake_path, path, normal_accelerations.samples_time)
 
         logger.debug("Returning normal accelerations")
         return normal_accelerations

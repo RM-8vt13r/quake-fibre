@@ -36,6 +36,8 @@ class Transceiver:
         - filter_parameter [object]: (optional) any parameter(s) to define the filter, such as rolloff factor
         - sample_factor [int]: samples per symbol
         """
+        logger.info("Creating transceiver..")
+        
         if 'constellation' in parameters['TRANSCEIVER']:
             try:
                 self.constellation = json.loads(parameters.get('TRANSCEIVER', 'constellation'))

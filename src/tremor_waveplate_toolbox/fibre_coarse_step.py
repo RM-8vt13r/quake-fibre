@@ -3,6 +3,7 @@ An optical fibre channel model base class for dual-polarisation transmission, ba
 """
 from typing import override
 import logging
+from configparser import ConfigParser
 
 import numpy as np
 import scipy as sp
@@ -22,6 +23,11 @@ class FibreCoarseStep(Fibre):
     Chromatic dispersion, the Kerr effect, attenuation, EDFA noise, and polarisation-dependent loss are neglected, and slow PMD drift are not implemented.
     External perturbations can be modelled as a change in differential phase or major birefringence axes orientations.
     """
+    @override
+    def __init__(self, parameters: ConfigParser):
+        logger.error("FiberCoarseStep is an ad-hoc implementation and cannot be assumed to be correct")
+        super().__init__(parameters)
+
     @override
     def _init_birefringence_fixed(self):
         """

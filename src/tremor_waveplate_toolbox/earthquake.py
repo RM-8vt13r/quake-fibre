@@ -33,6 +33,8 @@ class Earthquake(PerturbationEvent, ABC):
         assert 'event' in parameters['EARTHQUAKE'], "'event' is missing from parameters section 'EARTHQUAKE'."
         assert 'model' in parameters['EARTHQUAKE'], "'model' is missing from parameters section 'EARTHQUAKE'."
 
+        logger.info("Creating earthquake..")
+
         super().__init__()
 
         self._event = parameters.get('EARTHQUAKE', 'event')

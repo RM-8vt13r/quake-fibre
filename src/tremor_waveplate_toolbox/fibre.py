@@ -55,6 +55,8 @@ class Fibre(ABC):
         - photoelasticity [float]:              Fibre photoelasticity.
         - modulus_model [str]:                  Method (FIXED or RANDOM) to generate polarisation mode dispersion realisations.
         """
+        logger.info("Creating fibre..")
+
         assert 'FIBRE'                        in parameters, f"Parameters are missing section 'FIBRE'."
         for field in (
                 'correlation_length',
@@ -339,7 +341,7 @@ class Fibre(ABC):
         assert signal.shape[-1] == 2, f"signal must have two polarisations on the last axis, but had {signal.shape[-1]}"
         assert len(signal.shape) == 4, f"signal must have shape [R,B,S,P], but had shape {signal.shape}"
         signal = signal.copy()
-        signal.to_device(signal.device) # Ensure that signal resides in the currently active GPU, or keep it on CPU if no GPU is active
+        if signal.device == Device.CUDA: signal.to_device(signal.device) # Ensure that signal resides in the currently active GPU, if any
         return signal
 
     def _prepare_perturbations(self, signal, perturbations):
@@ -438,6 +440,8 @@ class Fibre(ABC):
         Nonlinearity is applied only when propagating a signal (not when building a Jones matrix). Therefore, signal always has shape [R, B, S, P] here with realisations R, batch size B, time/frequency axis S and polarisations P = 2
         """
         # signal.samples_time = signal.samples_time * signal.xp.exp(1j * 8 / 9 * self.nonlinearity * step_length * np.linalg.norm(signal.samples_time, axis = -1)[:, :, :, None] ** 2) # ??? Wrong for now, look at Marcuse's paper
+        logger.error("Fibre nonlinearity is an ad-hoc implementation and cannot be assumed to be correct")
+
         signal_power   = signal.xp.linalg.norm(signal.samples_time, axis = -1)[:, :, :, None, None] ** 2 # [R, B, S, 1, 1]
 
         signal_rotator = -1/3 * signal.xp.einsum(

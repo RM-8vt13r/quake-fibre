@@ -37,6 +37,7 @@ from .earthquake_terrestrial import EarthquakeTerrestrial
 from .fibre_coarse_step import FibreCoarseStep
 from .fibre_cnlse import FibreCNLSE
 from .fibre import Fibre
+from .filter import Filter
 from .path import Path
 from .perturbation_event import PerturbationEvent
 from .perturbation import Perturbation
