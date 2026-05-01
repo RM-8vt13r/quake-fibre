@@ -1,122 +1,79 @@
-# tremor-waveplate-toolbox
+# quakefibre
 
 ## Description
-A toolbox to simulate optical fibre strain from earthquake tremors using the waveplate model.
-It models polarisation mode dispersion (PMD) as a constant differential group delay (DGD) along the fibre, and applies random rotations of the principal state of polarisation (PSP) after each correlation length.
-Earthquake seismograms are obtained through https requests to the [Syngine](https://ds.iris.edu/ds/products/syngine/) web service [\[1\]](#1).
-Resulting fibre strain is modelled as a change in DGD, like in [\[2,](#2)[3\]](#3).
+A toolbox to simulate submarine optical fibre propagation using the earthquake-perturbed coupled Schrödinger equation.
+Earthquake seismograms are obtained through HTTP request to the [Syngine](https://ds.iris.edu/ds/products/syngine/) web service [\[1\]](#1).
+Resulting fibre strain is modelled as a change in the birefringence, like in [\[2,](#2)[3\]](#3).
+This repository is the implementation of [\[4\]](#4).
 
 
-## Demo
-After [installing the toolbox](#testing-and-scripts), take a look at the notebooks in the `scripts' folder for demonstrations.
+## Directory structure
+- `src`: the toolbox source files.
+- `scripts`: scripts that reproduce the results from [\[4\]](#4).
+- `config`: model parameters to pass to the scripts.
+- `tests`: unittests that were used to test correctness of the toolbox.
 
 
 ## Installation
-If you want to run the included unit tests and scripts, refer to [Testing and Scripts](#testing-and-scripts) first.
-
-To use this project:  
 1. Install [Python](https://www.python.org) or [Anaconda](https://www.anaconda.com).  
-2. If you want to use CUDA acceleration, install [CUDA Toolkit](https://developer.nvidia.com/cuda-toolkit) system-wide, or install it locally in step 6.
-3. Open a command line terminal in the directory of your project.  
-4. (Recommended) create a new virtual environment:  
-   - [venv](https://docs.python.org/3/library/venv.html):  
-     `python -m venv env`,  
-     `python3 -m venv env`,  
-     `py -3 -m venv env`  
-     (depending on your OS and Python installation).  
-   - [Anaconda](https://www.anaconda.com/download):  
-     `conda create -n tremor-waveplate`.  
-5. Activate the environment:  
-   - venv:  
-     `call env/Scripts/activate`
-     on Windows, or  
-     `source env/bin/activate`
-     on Linux and MacOSX.  
-   - Anaconda:  
-     `conda activate tremor-waveplate`.  
-6. Install this repository using..  
-   a. ..HTTPS.
-      This will require you to login using your GitLab credentials.
-      Note: you will probably need GitLab-specific credentials; a constitutional login might fail.  
-
+2. (Recommended) create a new virtual environment  
+   - with [venv](https://docs.python.org/3/library/venv.html):  
+     `python -m venv env`, `python3 -m venv env`, or `py -3 -m venv env` (depending on your system).  
+     `call env/Scripts/activate` (Windows), or `source env/bin/activate` (Linux/MacOSX).
+   - with [Anaconda](https://www.anaconda.com/download):  
+     `conda create -n quakefibre`.  
+     `conda activate quakefibre`.
+6. Install quakefibre ([set up a personal SSH key pair](https://docs.gitlab.com/user/ssh/) first):  
       ```bat
-      pip install "tremor-waveplate-toolbox @ git+https://gitlab.tue.nl/r.m.butler/tremor-waveplate-toolbox.git"
+      pip install "quakefibre @ git+ssh://git@github.com:RM-8vt13r/quake-fibre.git"
       ```
-      
-   b. ..SSH.
-      This will require you to [setup a personal SSH key pair](https://docs.gitlab.com/user/ssh/) beforehand.
-      ```bat
-      pip install "tremor-waveplate-toolbox @ git+ssh://git@gitlab.tue.nl/r.m.butler/tremor-waveplate-toolbox.git"
-      ```
-      If you want to use CUDA acceleration and installed CUDA system-wide in step 2, use `tremor-waveplate-toolbox[cuda..x]` instead, where you replace `..` with `11`, `12` or `13` depending on your CUDA Toolkit installation.  
-      If you want to install CUDA locally within the environment, use `tremor-waveplate-toolbox[cuda..x-local]`, and make sure to `import` `tremor-waveplate-toolbox` before `cupy` in any scripts.  
-
-7. All done!
+      On a system with a compatible [CUDA Toolkit](https://developer.nvidia.com/cuda-toolkit) installation: `quakefibre[cuda..x]`, replacing `..` with `11`, `12` or `13`.  
+      On a system without a compatible CUDA installation, but with a CUDA-enabled GPU: `quakefibre[cuda..x-local]`.  
+      If you intend to run the scripts in `scripts` or unittests in `tests`: `quakefibre[testing]`
 
 
 ## Testing and scripts
-To run scripts or unit tests from the corresponding directories in this project:  
-1. Clone this repository using..  
-   a. ..HTTPS:  
-   ```bat
-   git clone https://gitlab.tue.nl/r.m.butler/tremor-waveplate-toolbox.git
-   ```  
-   b. ..SSH:
-   ```bat
-   git clone git@gitlab.tue.nl:r.m.butler/tremor-waveplate-toolbox.git
-   ```  
-   See step 6 of [Installation](#installation) for differences between HTTPS and SSH cloning.
-2. Move into the newly created project folder.  
-3. Follow steps 1-5 under [Installation](#installation).  
-4. Install the toolbox using
-   ```bat
-   pip install .[testing]
-   ```  
-   If you want to use CUDA acceleration, use `.[testing,cuda..x]` instead where you replace `..` with `11`, `12` or `13` depending on your CUDA Toolkit installation.  
-5. To run scripts:  
-   `jupyter notebook scripts`  
-6. To run unit tests:  
-   `pytest`  
+To reproduce the results from [\[4\]](#4):  
+```bat
+python scripts/demo_end_to_end.py --configs config/earthquake_oaxaca.ini fibre_curie.ini signal_continuous.ini transceiver_curie.ini --out results --make-out --alpha 1.5
+```
+
+To run unit tests:  
+```bat
+pytest tests
+```
 
 ## Usage
-Take a look at the notebooks in the 'scripts' folder for specific demonstrations.  
-After [installation](#installation), general usage looks like:
+Take a look at the `scripts` folder for a demonstration.  
+Or, check out this simple example:
 ```python
 from configparser import ConfigParser
-from tremor_waveplate_toolbox import Fibre, Transmitter, Receiver, Earthquake, Device
+from quakefibre import FibreCNLSE, Transceiver, EarthquakeSubmarine
 
-# Load predefined parameters describing a fibre and transceiver
+# Load predefined parameters describing a fibre, earthquake, and transceiver
 parameters = ConfigParser()
-parameters.read('config/parameters.ini')
+parameters.read([
+        'config/earthquake_oaxaca.ini',
+        'config/fibre_curie.ini',
+        'config/signal_continuous.ini',
+        'config/transceiver_curie.ini'
+    ])
 
-# Create a transmitter, and generate a signal
-transmitter = Transmitter(parameters)
-transmitted_symbols, transmitted_signal = transmitter.transmit_random(shape = (
-    parameters.getint('SIGNAL', 'batch_size'),
-    int(parameters.getfloat('SIGNAL', 'symbol_count'))
-))
+# Create a transceiver and transmit a continuous wave
+transceiver = Transceiver(parameters)
+transmitted_signal = transceiver.transmit_continuous(
+        symbol = [1, 0],
+        symbol_count = parameters.getint('SIGNAL', 'symbol_count'),
+        carrier_wavelength = parameters.getfloat('SIGNAL', 'carrier')
+    )
 
-# Create an optical fibre model, and transmit the signal
-fibre = FibreCoarseStep(parameters)
-received_signal = fibre(transmitted_signal, verbose = True)
+# Create an optical fibre model and earthquake
+fibre = FibreCNLSE(parameters)
+earthquake = EarthquakeSubmarine(parameters)
 
-# Receive the signal
-receiver = Receiver(parameters)
-received_symbols = receiver(received_signal)
-
-# Propagate using CUDA acceleration
-transmitted_signal.to_device(Device.CUDA)
-received_signal = fibre(transmitted_signal, verbose = True)
-
-# Create an earthquake, and measure strain along the fibre link
-earthquake = Earthquake(
-    event = 'GCMT:C201002270634A',
-    model = 'ak135f_5s'
-)
-time, _, _, _, _, strain = \
-    earthquake(fibre, verbose = True)
-
-# Effects of the earthquake on the fibre propagation will be included in the near future
+# Obtain fibre strain and propagate the signal
+earthquake_perturbation = earthquake(fibre.step_path)
+received_signal = fibre(transmitted_signal, perturbations = earthquake_perturbation)
 ```
 
 
@@ -145,62 +102,15 @@ vol. 24, no. 10, pp. 3041,
 May 2024.
 DOI: [10.3390/s24103041](https://doi.org/10.3390/s24103041)
 
+<a name="4">\[4\]</a>
+R. M. Butler, J. Núñez-Kasaneva, *et al.*,
+"End-to-End Modelling of Earthquake-Induced Polarisation Perturbations in Submarine Optical Fibres,"
+*Eur. Conf. Opt. Commun.*,
+In Review.
+
 
 ## Citation
-If you use this work, please cite
-```bibtex
-@article{Krischer:Jul17:Syngine,
-    author={Krischer, Lion and Hutko, Alexander R. and van Driel, Martin and St\"ahlar, Simon and Bahavar, Manochehr and Trabant, Chad and Nissen-Meyer, Tarje},
-    title={On-Demand Custom Broadband Synthetic Seismograms},
-    journal={Seismol. Res. Lett.},
-    year={2017},
-    month={07},
-    volume={88},
-    number={4},
-    pages={1127--1140},
-    publisher={Seismological Society of America},
-    doi={10.1785/0220160210}
-}
-
-@article{Mecozzi:Jun21:polarization_sensing_submarine,
-    author={Mecozzi, Antonio and Cantono, Mattia and Castellanos, Jorge C. and Kamalov, Valey and Muller, Rafael and Zhan, Zhongwen},
-    title={Polarization Sensing using Submarine Optical Cables},
-    journal={Opt.},
-    year={2021},
-    month={06},
-    volume={8},
-    number={6},
-    pages={788--795},
-    publisher={Optica Publishing Group},
-    doi={10.1364/OPTICA.424307}
-}
-
-@article{Awad:May24:environmental_surveillance_networks,
-    author={Awad, Hasan and Usmani, Fehmida and Virgillito, Emanuele and Bratovich, Rudi and Proietti, Roberto and Straullu, Stefano and Aquilino, Francesco and Pastorelli, Rosanna and Curri, Vittorio},
-    title={Environmental Surveillance through Machine Learning-Empowered Utilization of Optical Networks},
-    journal={Sens.},
-    year={2024},
-    month={05},
-    volume={24},
-    number={10},
-    pages={3041},
-    publisher={MDPI},
-    doi={10.3390/s24103041}
-}
-
-@article{Butler::earthquake_PMD_modelling,
-    author={Butler, Rick Maarten and Kasaneva, Jos\'e N\'u\~nez and Karlsson, Magnus and H\"ager, Christian and Alvarado, Alex},
-    title={Modelling Optical Fibre Birefringence under Seismic Strain},
-    journal={Nature, of course},
-    year={},
-    month={},
-    volume={},
-    number={},
-    pages={},
-    publisher={Springer Nature},
-    doi={}
-}
-```
+If you use this work, please cite [\[4\]](#4).
 
 ## Authors and acknowledgment
 Maintained by Rick M. Butler.  
