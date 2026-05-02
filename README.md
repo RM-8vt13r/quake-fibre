@@ -23,7 +23,7 @@ This repository is the implementation of [\[4\]](#4).
    - with [Anaconda](https://www.anaconda.com/download):  
      `conda create -n quakefibre`.  
      `conda activate quakefibre`.
-6. Install quakefibre ([set up a personal SSH key pair](https://docs.gitlab.com/user/ssh/) first):  
+6. Install quakefibre:  
       ```bat
       pip install "quakefibre @ git+https://github.com/RM-8vt13r/quake-fibre.git"
       ```
