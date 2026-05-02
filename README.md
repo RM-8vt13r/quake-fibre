@@ -49,7 +49,7 @@ pytest tests
 
 ## Usage
 Take a look at the `scripts` folder for a demonstration.  
-Or, check out this simple example:
+Or, check out this simple example (Note that this example is slow and heavy on system RAM; write your own `config`s or check out the `scripts` for optimised examples):
 ```python
 from configparser import ConfigParser
 from quakefibre import FibreCNLSE, Transceiver, EarthquakeSubmarine
