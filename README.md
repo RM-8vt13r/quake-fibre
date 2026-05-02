@@ -25,7 +25,7 @@ This repository is the implementation of [\[4\]](#4).
      `conda activate quakefibre`.
 6. Install quakefibre ([set up a personal SSH key pair](https://docs.gitlab.com/user/ssh/) first):  
       ```bat
-      pip install "quakefibre @ git+ssh://git@github.com/RM-8vt13r/quake-fibre.git"
+      pip install "quakefibre @ git+https://github.com/RM-8vt13r/quake-fibre.git"
       ```
       On a system with a compatible [CUDA Toolkit](https://developer.nvidia.com/cuda-toolkit) installation: `quakefibre[cuda..x]`, replacing `..` with `11`, `12` or `13`.  
       On a system without a compatible CUDA installation, but with a CUDA-enabled GPU: `quakefibre[cuda..x-local]`.  
