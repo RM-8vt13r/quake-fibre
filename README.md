@@ -34,12 +34,15 @@ This repository is the implementation of [\[4\]](#4).
 
 
 ## Testing and scripts
+To run the included scripts and unittests, first clone the repository to your local machine.
+Then, open a terminal in the repository root.
+
 To reproduce the results from [\[4\]](#4):  
 ```bat
 python scripts/demo_end_to_end.py --configs config/earthquake_oaxaca.ini fibre_curie.ini signal_continuous.ini transceiver_curie.ini --out results --make-out --alpha 1.5
 ```
 
-To run unit tests:  
+To run unittests:  
 ```bat
 pytest tests
 ```
