@@ -6,7 +6,7 @@ import json
 
 import numpy as np
 
-from tremor_waveplate_toolbox import EarthquakeTerrestrial, EarthquakeSubmarine, Path
+from quakefibre import EarthquakeTerrestrial, EarthquakeSubmarine, Path
 
 parameters = ConfigParser()
 

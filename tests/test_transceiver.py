@@ -6,7 +6,7 @@ from configparser import ConfigParser
 
 import numpy as np
 
-from tremor_waveplate_toolbox import Signal, Transceiver, QPSK
+from quakefibre import Signal, Transceiver, QPSK
 
 parameters = ConfigParser()
 parameters['TRANSCEIVER'] = {

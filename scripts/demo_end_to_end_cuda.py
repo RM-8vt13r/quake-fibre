@@ -11,7 +11,7 @@ import logging
 import csv
 from requests import HTTPError, ConnectionError, Timeout
 
-from tremor_waveplate_toolbox import FibreCNLSE, EarthquakeSubmarine, Transceiver, Device, Perturbation, Filter
+from quakefibre import FibreCNLSE, EarthquakeSubmarine, Transceiver, Device, Perturbation, Filter
 
 import numpy as np
 import cupy as cp

@@ -10,7 +10,7 @@ try:
 except:
     print("cupy not available; skipping all CUDA tests..")
 
-from tremor_waveplate_toolbox import Signal, Domain, Device, Filter
+from quakefibre import Signal, Domain, Device, Filter
 
 parameters = ConfigParser()
 parameters["TRANSCEIVER"] = {

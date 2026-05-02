@@ -5,7 +5,7 @@ Test correctness of pulse.py
 import numpy as np
 import matplotlib.pyplot as plt
 
-from tremor_waveplate_toolbox import Sinc, RootRaisedCosine, Square, Signal
+from quakefibre import Sinc, RootRaisedCosine, Square, Signal
 
 symbol_rate = 1e6
 upsample_factor = 17

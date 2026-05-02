@@ -4,7 +4,7 @@ Test correctness of constellation.py
 
 import numpy as np
 
-from tremor_waveplate_toolbox import QPSK
+from quakefibre import QPSK
 
 def test_normalisation():
     c = QPSK.copy()

@@ -13,7 +13,7 @@ except:
 import numpy as np
 import scipy as sp
 
-from tremor_waveplate_toolbox import FibreCoarseStep, FibreCNLSE, Transceiver, Device, Signal, Perturbation, Domain
+from quakefibre import FibreCoarseStep, FibreCNLSE, Transceiver, Device, Signal, Perturbation, Domain
 
 parameters = ConfigParser()
 parameters['TRANSCEIVER'] = {
