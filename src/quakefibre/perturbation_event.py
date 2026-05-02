@@ -16,50 +16,47 @@ class PerturbationEvent(ABC):
     def __init__(self):
         super().__init__()
 
-    def __call__(self, path: Path, step_length: float = None, *args, **kwargs):
-        return self.request_perturbations(path, step_length, *args, **kwargs)
+    def __call__(self, path: Path, *args, **kwargs):
+        return self.request_perturbations(path, *args, **kwargs)
 
-    def request_fibre_strains(self, path: Path, step_length: float = None, *args, **kwargs) -> Signal:
+    def request_fibre_strains(self, path: Path, *args, **kwargs) -> Signal:
         """
         Request the material strain on each path section.
 
         Inputs:
         - path [Path]: Fibre path with C edges
-        - step_length [float]: if not None, request strains at I points along path spaced step_length apart in km. Then, interpolate the results back to every edge centre along path to calculate strains.
         
         Outputs:
         - [Signal] signal containing fibre strain, shape [C, T, 1].
         """
         return None
 
-    def request_fibre_twists(self, path: Path, step_length: float = None, *args, **kwargs) -> Signal:
+    def request_fibre_twists(self, path: Path, *args, **kwargs) -> Signal:
         """
         Request the material twists on each path section.
 
         Inputs:
         - path [Path]: Fibre path with C edges
-        - step_length [float]: if not None, request twists at I points along path spaced step_length apart in km. Then, interpolate the results back to every edge centre along path to calculate twists.
         
         Outputs:
         - [Signal] signal containing fibre twists, shape [C, T, 1].
         """
         return None
 
-    def request_perturbations(self, path: Path, step_length: float = None, *args, **kwargs) -> tuple:
+    def request_perturbations(self, path: Path, *args, **kwargs) -> tuple:
         """
         Obtain the perturbations over time along a given path.
 
         Inputs:
         - path [Path]: the path along which to obtain perturbations.
-        - step_length [float]: if not None, generate perturbations at points along path spaced step_length apart in km. Then, interpolate the results back to every vertex along path.
         - args: any positional arguments to a subclassing event's implementation of this function
         - kwargs: any keyword-indexed arguments to a subclassing event's implementation of this function
 
         Outputs:
         - [tuple] the Perturbations along the path over time, resulting from this event. Shape [K, T], where K is the number of path segments and T the number of time samples.
         """
-        strains = self.request_fibre_strains(path, step_length, *args, **kwargs)
-        twists  = self.request_fibre_twists(path, step_length, *args, **kwargs)
+        strains = self.request_fibre_strains(path, *args, **kwargs)
+        twists  = self.request_fibre_twists(path, *args, **kwargs)
 
         assert strains is None or twists is None or (strains.shape == twists.shape and strains.sample_rate == twists.sample_rate), f"Strains and twists must have the same shape and sample rate"
 

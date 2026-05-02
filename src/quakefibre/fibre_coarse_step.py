@@ -25,7 +25,7 @@ class FibreCoarseStep(Fibre):
     """
     @override
     def __init__(self, parameters: ConfigParser):
-        logger.error("FiberCoarseStep is an ad-hoc implementation and cannot be assumed to be correct")
+        logger.error("FiberCoarseStep is an ad-hoc, untested implementation and cannot be assumed to be correct")
         super().__init__(parameters)
 
     @override

@@ -17,7 +17,7 @@ logger = logging.getLogger()
 class EarthquakeTerrestrial(Earthquake):
     @override
     def __init__(self, parameters: ConfigParser):
-        logger.error("EarthquakeTerrestrial is an ad-hoc implementation and cannot be assumed to be correct")
+        logger.error("EarthquakeTerrestrial is an ad-hoc, untested implementation and cannot be assumed to be correct")
         super().__init__(parameters)
 
     @override
