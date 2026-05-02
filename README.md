@@ -110,6 +110,7 @@ DOI: [10.3390/s24103041](https://doi.org/10.3390/s24103041)
 R. M. Butler, J. Núñez-Kasaneva, *et al.*,
 "End-to-End Modelling of Earthquake-Induced Polarisation Perturbations in Submarine Optical Fibres,"
 *Eur. Conf. Opt. Commun.*,
+Sep. 2026.
 In Review.
 
 
