@@ -10,7 +10,7 @@ This repository is the implementation of [\[4\]](#4).
 ## Directory structure
 - `src`: the toolbox source files.
 - `scripts`: scripts that reproduce the results from [\[4\]](#4).
-- `config`: model parameters to pass to the scripts.
+- `config`: model parameters to pass to the scripts. The currently included configs reproduce the situation from [\[5\]](#5).
 - `tests`: unittests that were used to test correctness of the toolbox.
 
 
@@ -37,7 +37,7 @@ This repository is the implementation of [\[4\]](#4).
 To run the included scripts and unittests, first clone the repository to your local machine.
 Then, open a terminal in the repository root.
 
-To reproduce the results from [\[4\]](#4):  
+To reproduce the results from [\[4\]](#4) (simulating the situation from [\[5\]](#5)):  
 ```bat
 python scripts/demo_end_to_end.py --configs config/earthquake_oaxaca.ini fibre_curie.ini signal_continuous.ini transceiver_curie.ini --out results --make-out --alpha 1.5
 ```
@@ -110,6 +110,14 @@ DOI: [10.3390/s24103041](https://doi.org/10.3390/s24103041)
 R. M. Butler, J. Núñez-Kasaneva, *et al.*,
 "End-to-End Modelling of Earthquake-Induced Polarisation Perturbations in Submarine Optical Fibres,"
 In Review.
+
+<a name="5">\[5\]</a>
+Z. Zhan, M. Cantono *et al.*,
+"Optical polarization-based seismic and water wave sensing on transoceanic cables,"
+*Sci.*,
+vol. 371, no. 6532, pp. 931&ndash;936,
+Feb. 2021.
+DOI: [10.1126/science.abe6648](https://doi.org/10.1126/science.abe6648)
 
 
 ## Citation
