@@ -1,6 +1,7 @@
 """
 A class describing a physical perturbation on an optical fibre, created by a physical event (see perturbation_event.py)
 """
+from typing import override
 import logging
 logger = logging.getLogger()
 
@@ -65,6 +66,23 @@ class Perturbation(Signal):
                 domain = domain,
                 carrier_wavelength = np.inf
             )
+
+    @override
+    def copy(self):
+        """
+        [Perturbation] return a copy of this signal
+        """
+        return Perturbation(
+            start_time = self.start_time,
+            strains = self.strains.copy() if self.strains is not None else None,
+            twists = self.twists.copy() if self.twists is not None else None,
+            sample_rate = self.sample_rate,
+            domain = self.domain
+        )
+
+    @override
+    def __eq__(self, other):
+        return super().__eq__(other) and self.start_time == other.start_time
 
     @property
     def start_time(self):

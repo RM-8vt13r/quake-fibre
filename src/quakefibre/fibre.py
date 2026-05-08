@@ -341,7 +341,7 @@ class Fibre(ABC):
         assert signal.shape[-1] == 2, f"signal must have two polarisations on the last axis, but had {signal.shape[-1]}"
         assert len(signal.shape) == 4, f"signal must have shape [R,B,S,P], but had shape {signal.shape}"
         signal = signal.copy()
-        if signal.device == Device.CUDA: signal.to_device(signal.device) # Ensure that signal resides in the currently active GPU, if any
+        signal.to_device(signal.device) # Ensure that signal resides in the currently active GPU, if any
         return signal
 
     def _prepare_perturbations(self, signal, perturbations):

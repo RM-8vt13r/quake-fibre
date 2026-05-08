@@ -119,7 +119,7 @@ class Signal:
         match device:
             case Device.CPU:
                 if self.device == Device.CPU:
-                    logger.warning("Attempted to move signal into CPU memory, but it already resided there.")
+                    # logger.warning("Attempted to move signal into CPU memory, but it already resided there.")
                     return
                     
                 self._device = device
