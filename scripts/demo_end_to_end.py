@@ -73,7 +73,7 @@ if __name__ == '__main__':
     np.save(os.path.join(arguments.out, "signal_time.npy"), signal.time)
 
     # At what times to start transmitting the signal, to 'catch' the earthquake at different moments
-    transmission_start_times = np.arange(config.getfloat('SIGNAL', 'transmission_start'), config.getfloat('SIGNAL', 'transmission_stop'), config.getfloat('SIGNAL', 'transmission_step')) # Zhan et al. measured 20 samples / second; transmit a short signal every 1 / 20 seconds
+    transmission_start_times = np.arange(parameters.getfloat('SIGNAL', 'transmission_start'), parameters.getfloat('SIGNAL', 'transmission_stop'), parameters.getfloat('SIGNAL', 'transmission_step')) # Zhan et al. measured 20 samples / second; transmit a short signal every 1 / 20 seconds
 
     # Propagate signals
     logger.info(f"Starting signal propagation")
