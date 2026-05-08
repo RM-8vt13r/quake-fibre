@@ -96,10 +96,10 @@ if __name__ == '__main__':
 
         # Obtain strain along this piece
         logger.info(f"Requesting fibre strains")
-        strains = None
+        perturbation = None
         timeout = 1
         max_timeout = 600
-        while strains is None:
+        while perturbation is None:
             try:
                 kwargs = {
                     'path'               : piece_step_path,
