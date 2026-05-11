@@ -39,7 +39,11 @@ Then, open a terminal in the repository root.
 
 To reproduce the results from [\[4\]](#4) (simulating the situation from [\[5\]](#5)):  
 ```bat
-python scripts/demo_end_to_end.py --configs config/earthquake_oaxaca.ini fibre_curie.ini signal_continuous.ini transceiver_curie.ini --out results --make-out --alpha 1.5
+python scripts/demo_end_to_end.py --configs config/earthquake_oaxaca.ini config/fibre_curie.ini config/signal_continuous.ini config/transceiver_curie.ini --out results --make-out --alpha 1.5
+```
+or, with GPU acceleration:  
+```bat
+python scripts/demo_end_to_end_cuda.py --configs config/earthquake_oaxaca.ini config/fibre_curie.ini config/signal_continuous.ini config/transceiver_curie.ini --out results --make-out --alpha 1.5 --GPU 0
 ```
 
 To run unittests:  
