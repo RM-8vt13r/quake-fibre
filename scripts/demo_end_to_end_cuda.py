@@ -149,4 +149,4 @@ if __name__ == '__main__':
     logger.info(f"Saving results")
     for propagated_signal, alpha in zip(propagated_signals, arguments.alpha):
         propagated_signal.to_device(Device.CPU)
-        np.save(os.path.join(arguments.out, f"propagated_signal_alpha={alpha}.npy"), propagated_signal.time)
+        np.save(os.path.join(arguments.out, f"propagated_signal_alpha={alpha}.npy"), propagated_signal.samples_time)

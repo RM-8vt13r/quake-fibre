@@ -144,4 +144,4 @@ if __name__ == '__main__':
     # Save received signal
     logger.info(f"Saving results")
     for propagated_signal, alpha in zip(propagated_signals, arguments.alpha):
-        np.save(os.path.join(arguments.out, f"propagated_signal_alpha={alpha}.npy"), propagated_signal.time)
+        np.save(os.path.join(arguments.out, f"propagated_signal_alpha={alpha}.npy"), propagated_signal.samples_time)
