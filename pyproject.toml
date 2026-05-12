@@ -85,5 +85,6 @@ cuda11x-local = [
 
 testing = [
     "pytest",
-    "tqdm"
+    "tqdm",
+    "ipykernel"
 ]
