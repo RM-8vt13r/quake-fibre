@@ -87,7 +87,7 @@ received_signal = fibre(transmitted_signal, perturbations = earthquake_perturbat
 
 ## Citation
 If you use this work, please cite [\[4\]](#4):
-```latex
+```bibtex
 @inproceedings{Butler:In_Review:modelling_earthquake_fibres,
     author={Butler, Rick M. and N\'u\~nez-Kasaneva, Jos\'e and Liga, Gabriele and Karlsson, Magnus and Alvarado, Alex and H\"ager, Christian},
     title={End-to-End Modelling of Earthquake-Induced Polarisation Perturbations in Submarine Optical Fibres},
