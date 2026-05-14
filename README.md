@@ -85,6 +85,22 @@ received_signal = fibre(transmitted_signal, perturbations = earthquake_perturbat
 ```
 
 
+## Citation
+If you use this work, please cite [\[4\]](#4):
+```latex
+@inproceedings{Butler:In_Review:modelling_earthquake_fibres,
+    author={Butler, Rick M. and N\'u\~nez-Kasaneva, Jos\'e and Liga, Gabriele and Karlsson, Magnus and Alvarado, Alex and H\"ager, Christian},
+    title={End-to-End Modelling of Earthquake-Induced Polarisation Perturbations in Submarine Optical Fibres},
+    booktitle={},
+    year={In Review},
+    month={},
+    pages={},
+    publisher={},
+    doi={}
+}
+```
+
+
 ## References
 <a name="1">\[1\]</a>
 L. Krischer, A. R. Hutko, M. van Driel, *et al.*,
@@ -122,13 +138,3 @@ Z. Zhan, M. Cantono *et al.*,
 vol. 371, no. 6532, pp. 931&ndash;936,
 Feb. 2021.
 DOI: [10.1126/science.abe6648](https://doi.org/10.1126/science.abe6648)
-
-
-## Citation
-If you use this work, please cite [\[4\]](#4).
-
-## Authors and acknowledgment
-Maintained by Rick M. Butler.  
-
-## License
-This project is published under the MIT license.
