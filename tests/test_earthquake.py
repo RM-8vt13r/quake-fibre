@@ -3,8 +3,10 @@ Test correctness of earthquake.py
 """
 from configparser import ConfigParser
 import json
+import tempfile
 
 import numpy as np
+import xarray as xr
 
 from quakefibre import EarthquakeTerrestrial, EarthquakeSubmarine, Path
 
@@ -148,3 +150,26 @@ def test_intervals():
 
     assert perturbation.duration == 1, f"Requested perturbation for 1 second, but it lasted {perturbation.duration}"
     assert perturbation.start_time == 0, f"Perturbation should start at 0s, but started at {perturbation.start_time} s"
+
+def test_saving():
+    path = Path(*zip(*path_coordinates)).interpolated(parameters.getfloat('EARTHQUAKE', 'step_length_dense'))
+    earthquake = EarthquakeTerrestrial(parameters)
+
+    perturbation = earthquake(
+            path,
+            None,
+            1,
+            parameters.getint('EARTHQUAKE', 'batch_size_dense'),
+            parameters.getint('EARTHQUAKE', 'worker_count'),
+            parameters.getfloat('EARTHQUAKE', 'request_delay')
+        )
+
+    perturbation_dataset = perturbation.to_dataset()
+
+    file = tempfile.TemporaryFile()
+    perturbation_dataset.to_netcdf(file)
+    loaded_perturbation_dataset = xr.load_dataset(file)
+    file.close()
+
+    assert perturbation == Perturbation.from_dataset(perturbation_dataset), f"Perturbation changed after conversion to- and from a Dataset"
+    assert perturbation == Perturbation.from_dataset(loaded_perturbation_dataset), f"Perturbation changed after conversion from a saved Dataset file"

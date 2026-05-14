@@ -46,6 +46,7 @@ requires-python = ">= 3.11"
 dependencies = [
     "numpy",
     "scipy",
+    "xarray",
     "obspy",
     "refractiveindex",
     "setuptools<81"

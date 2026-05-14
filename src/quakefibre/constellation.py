@@ -89,14 +89,14 @@ class Constellation:
 
         assert isinstance(coordinates, (np.ndarray, list, tuple)),   f"coordinates must be a np.ndarray, but was {type(coordinates)}"
         coordinates = np.asarray(coordinates.copy())
-        assert coordinates.dtype in (complex, float, int), f"coordinates must have dtype complex, but this was {coordinates.dtype}"
+        assert np.issubdtype(coordinates.dtype, np.number), f"coordinates must have dtype complex, but this was {coordinates.dtype}"
         coordinates = coordinates.astype(complex)
         assert len(coordinates.shape) == 1, f"coordinates must have a single dimension, but had {len(coordinates.shape)}"
 
         if probabilities is None: probabilities = np.ones_like(coordinates, dtype = float) / len(coordinates)
         assert isinstance(probabilities, (np.ndarray, list, tuple)), f"probabilities must be a np.ndarray, but was {type(probabilities)}"
         probabilities = np.asarray(probabilities)
-        assert probabilities.dtype in (float, int), f"probabilities must have dtype float, but this was {probabilities.dtype}"
+        assert np.issubdtype(probabilities.dtype, np.floating) or np.issubdtype(probabilities.dtype, np.integer), f"probabilities must have dtype float, but this was {probabilities.dtype}"
         probabilities = probabilities.astype(float)
         assert len(probabilities.shape) == 1, f"probabilities must have a single dimension, but had {len(probabilities.shape)}"
         assert np.all(probabilities >= 0), f"All probabilities must be nonnegative"

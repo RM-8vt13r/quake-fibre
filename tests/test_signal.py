@@ -3,14 +3,16 @@ Test correctness of signal.py
 """
 from configparser import ConfigParser
 import sys
+import tempfile
 
 import numpy as np
 try:
     import cupy as cp
 except:
     print("cupy not available; skipping all CUDA tests..")
+import xarray as xr
 
-from quakefibre import Transceiver, Domain, Device
+from quakefibre import Transceiver, Domain, Device, Signal
 
 parameters = ConfigParser()
 parameters["TRANSCEIVER"] = {
@@ -58,6 +60,15 @@ def test_signal():
         signal2.resample(signal.sample_rate)
         assert signal2.shape == signal.shape, f"{device} expected signal length {signal.shape[-2]} after double resampling, but got {signal2.shape[-2]}"
         assert signal.xp.allclose(signal2.samples_time, signal.samples_time), f"{device} double resampled signal does not match original signal"
+
+        signal_dataset = signal.to_dataset()
+        file = tempfile.TemporaryFile()
+        signal_dataset.to_netcdf(file)
+        loaded_signal_dataset = xr.load_dataset(file)
+        file.close()
+
+        assert signal == Signal.from_dataset(signal_dataset), f"Signal changed after conversion to- and from a Dataset"
+        assert signal == Signal.from_dataset(loaded_signal_dataset), f"Signal changed after conversion from a saved Dataset file"
 
     signal.to_device(Device.CPU)
     signal_cuda = signal.copy()

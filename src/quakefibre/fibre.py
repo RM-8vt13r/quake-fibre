@@ -535,49 +535,131 @@ class Fibre(ABC):
 
         return fibre_dict
 
-    @classmethod
     @abstractmethod
-    def from_dict(cls, fibre_dict: dict):
+    def to_dataset(self) -> xr.Dataset:
         """
-        Instantiate a fibre from a saved dictionary.
-
-        Inputs:
-        - fibre_dict [dict]: a dictionary created using Fibre.to_dict()
+        Convert this Fibre (and its exact realisations) to an xarray Dataset that can be saved to a file
 
         Outputs:
-        - [Fibre] the loaded fibre instance.
+        - [xr.Dataset]: the Dataset representing this Fibre
+        """
+        span_path_dataset = self.span_path.to_dataset()
+        span_path_dataset = span_path_dataset.rename({name: 'span_' + name for name in span_path_dataset.data_vars + span_path_dataset.dims})
+
+        step_path_dataset = self.step_path.to_dataset()
+
+        if self._path is not None:
+            path_dataset = self.path.to_dataset()
+            path_dataset = path_dataset.rename({name: 'path_' + name for name in path_dataset.data_vars + path_dataset.dims})
+        else:
+            path_dataset = None
+
+        dataset = xr.Dataset(
+                data_vars = {
+                        'step_gains_dB': xr.DataArray(self.step_gains, dims = [step_path_dataset['lengths'].dims[0]]),
+                        'differential_group_delays': xr.DataArray(self.differential_group_delays, dims = [step_path_dataset['lengths'].dims[0], 'realisations'])
+                    },
+                attrs = {
+                        'correlation_length':           self.correlation_length,
+                        'beat_length':                  self.beat_length,
+                        'steps_per_span':               self.steps_per_span,
+                        'chromatic_dispersion':         self.chromatic_dispersion,
+                        'nonlinearity':                 self.nonlinearity,
+                        'attenuation':                  self.attenuation,
+                        'noise_figure':                 self.noise_figure_dB,
+                        'polarisation_mode_dispersion': self.polarisation_mode_dispersion,
+                        'realisation_count':            self.realisation_count,
+                        'photoelasticity':              self.photoelasticity,
+                        'modulus_model':                self.modulus_model
+                    }
+            )
+
+        dataset = dataset.merge(span_path_dataset)
+        dataset = dataset.merge(step_path_dataset)
+        if path_dataset is not None:
+            dataset = dataset.merge(path_dataset)
+
+        return dataset
+
+    # @classmethod
+    # @abstractmethod
+    # def from_dict(cls, fibre_dict: dict):
+    #     """
+    #     Instantiate a fibre from a saved dictionary.
+
+    #     Inputs:
+    #     - fibre_dict [dict]: a dictionary created using Fibre.to_dict()
+
+    #     Outputs:
+    #     - [Fibre] the loaded fibre instance.
+    #     """
+    #     parameters = ConfigParser()
+    #     parameters.add_section('FIBRE')
+    #     parameters.set('FIBRE', 'correlation_length',           str(fibre_dict['correlation_length']))
+    #     parameters.set('FIBRE', 'beat_length',                  str(fibre_dict['beat_length']))
+    #     parameters.set('FIBRE', 'steps_per_span',               str(fibre_dict['steps_per_span']))
+    #     parameters.set('FIBRE', 'chromatic_dispersion',         str(fibre_dict['chromatic_dispersion']))
+    #     parameters.set('FIBRE', 'nonlinearity',                 str(fibre_dict['nonlinearity']))
+    #     parameters.set('FIBRE', 'attenuation',                  str(fibre_dict['attenuation']))
+    #     parameters.set('FIBRE', 'noise_figure',                 str(fibre_dict['noise_figure']))
+    #     parameters.set('FIBRE', 'polarisation_mode_dispersion', str(fibre_dict['polarisation_mode_dispersion']))
+    #     parameters.set('FIBRE', 'realisation_count',            str(fibre_dict['realisation_count']))
+    #     parameters.set('FIBRE', 'photoelasticity',              str(fibre_dict['photoelasticity']))
+    #     parameters.set('FIBRE', 'modulus_model',                fibre_dict['modulus_model'])
+
+    #     span_path = Path.from_dict(fibre_dict['span_path'])
+    #     parameters.set('FIBRE', 'span_length', str(span_path.lengths[0]))
+        
+    #     if 'path' in fibre_dict:
+    #         path = Path.from_dict(fibre_dict['path'])
+    #         parameters.set('FIBRE', 'path_coordinates', json.dumps(path.coordinates.tolist()))
+    #     else:
+    #         parameters.set('FIBRE', 'span_count', str(span_path.edge_count))
+
+    #     fibre = cls(parameters)
+    #     fibre.differential_group_delays = np.array(fibre_dict['differential_group_delays'])
+        
+    #     fibre._step_path = Path.from_dict(fibre_dict['step_path'])
+    #     fibre._step_gains_dB = np.array(fibre_dict['step_gains_dB'])
+    #     fibre._span_path = span_path
+    #     if 'path' in fibre_dict:
+    #         fibre._path = path
+
+    #     return fibre
+
+    @classmethod
+    @abstractmethod
+    def from_dataset(cls, dataset: xr.Dataset):
+        """
+        Load a Fibre from an xarray dataset
+
+        inputs:
+        - dataset [xr.Dataset]: the dataset to load the Fibre from
+
+        outputs:
+        - [Fibre]: the loaded Fibre
         """
         parameters = ConfigParser()
-        parameters.add_section('FIBRE')
-        parameters.set('FIBRE', 'correlation_length',           str(fibre_dict['correlation_length']))
-        parameters.set('FIBRE', 'beat_length',                  str(fibre_dict['beat_length']))
-        parameters.set('FIBRE', 'steps_per_span',               str(fibre_dict['steps_per_span']))
-        parameters.set('FIBRE', 'chromatic_dispersion',         str(fibre_dict['chromatic_dispersion']))
-        parameters.set('FIBRE', 'nonlinearity',                 str(fibre_dict['nonlinearity']))
-        parameters.set('FIBRE', 'attenuation',                  str(fibre_dict['attenuation']))
-        parameters.set('FIBRE', 'noise_figure',                 str(fibre_dict['noise_figure']))
-        parameters.set('FIBRE', 'polarisation_mode_dispersion', str(fibre_dict['polarisation_mode_dispersion']))
-        parameters.set('FIBRE', 'realisation_count',            str(fibre_dict['realisation_count']))
-        parameters.set('FIBRE', 'photoelasticity',              str(fibre_dict['photoelasticity']))
-        parameters.set('FIBRE', 'modulus_model',                fibre_dict['modulus_model'])
+        for attribute, value in dataset.attrs.items():
+            parameters.set('FIBRE', attribute, str(value))
 
-        span_path = Path.from_dict(fibre_dict['span_path'])
-        parameters.set('FIBRE', 'span_length', str(span_path.lengths[0]))
-        
-        if 'path' in fibre_dict:
-            path = Path.from_dict(fibre_dict['path'])
-            parameters.set('FIBRE', 'path_coordinates', json.dumps(path.coordinates.tolist()))
+        span_path_dataset = dataset[['span_longitudes', 'span_latitudes', 'span_lengths']].copy(deep = True)
+        span_path_dataset.rename({data_variable.split('_')[1] for data_variable in span_path_dataset.data_vars})
+
+        path_data_variables = [data_variable for data_variable in dataset.data_vars if data_variable.startswith('path_')]
+        if len(path_data_variables):
+            path_dataset = dataset[path_data_variables]
         else:
-            parameters.set('FIBRE', 'span_count', str(span_path.edge_count))
+            path_dataset = None
 
         fibre = cls(parameters)
-        fibre.differential_group_delays = np.array(fibre_dict['differential_group_delays'])
+        fibre.differential_group_delays = dataset['differential_group_delays'].to_numpy()
         
-        fibre._step_path = Path.from_dict(fibre_dict['step_path'])
-        fibre._step_gains_dB = np.array(fibre_dict['step_gains'])
-        fibre._span_path = span_path
-        if 'path' in fibre_dict:
-            fibre._path = path
+        fibre._step_path = Path.from_dataset(dataset)
+        fibre._step_gains_dB = dataset['step_gains_dB'].to_numpy()
+        fibre._span_path = Path.from_dataset(span_path_dataset)
+        if path_dataset is not None:
+            fibre._path = Path.from_dataset(path_dataset)
 
         return fibre
 
@@ -817,7 +899,7 @@ class Fibre(ABC):
     @differential_group_delays.setter
     def differential_group_delays(self, value: np.ndarray):
         assert isinstance(value, np.ndarray), f"New differential_group_delays must be type np.ndarray, but was a {type(value)}"
-        assert value.dtype in (int, float), f"New differential_group_delays array must contain values of type float, but contained {value.dtype}"
+        assert np.issubdtype(value.dtype, np.integer) or np.issubdtype(value.dtype, np.floating), f"New differential_group_delays array must contain values of type float, but contained {value.dtype}"
         assert value.shape == (self.step_path.edge_count, self.realisation_count), f"New differential_group_delays array must have shape (self.step_path.edge_count ({self.step_path.edge_count}), self.realisation_count ({self.realisation_count})), but had shape {value.shape}"
         self._differential_group_delays = value.copy().astype(float)
 

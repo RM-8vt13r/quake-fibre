@@ -29,8 +29,8 @@ class Filter:
         assert len(frequencies.shape) == 1, f"frequencies must have shape [F,], but had shape {frequencies.shape}"
         assert len(responses.shape) == 1, f"responses must have shape [F,], but had shape {responses.shape}"
         assert frequencies.shape == responses.shape, f"frequencies and responses must have the same shape, but had shapes {frequencies} and {responses}"
-        assert isinstance(frequencies[0], (np.integer, np.floating)), f"frequencies must be real, but had dtype {frequencies.dtype}"
-        assert isinstance(responses[0], (np.integer, np.floating)), f"responses must be real, but had dtype {responses.dtype}"
+        assert np.issubdtype(frequencies.dtype, np.integer) or np.issubdtype(frequencies.dtype, np.floating), f"frequencies must be real, but had dtype {frequencies.dtype}"
+        assert np.issubdtype(responses.dtype, np.integer) or np.issubdtype(responses.dtype, np.floating), f"responses must be real, but had dtype {responses.dtype}"
         
         self._frequencies = frequencies
         self._responses = responses

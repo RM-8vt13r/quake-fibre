@@ -2,6 +2,7 @@
 A structure representing a signal.
 """
 import sys
+import os
 import logging
 
 import numpy as np
@@ -10,6 +11,7 @@ try:
     import cupy as cp
 except:
     pass
+import xarray as xr
 
 from .constants import Domain, Device, Gain
 from .utilities import dB2linear, linear2dB
@@ -37,8 +39,11 @@ class Signal:
         - domain [Domain]: domain (time or frequency) in which samples is given.
         - carrier_wavelength [float]: carrier wavelength in nm; inf if the signal is not modulated.
         """
-        assert isinstance(domain, Domain), f"domain must be a Domain, but was a {type(domain)}"
-        self._domain = domain
+        assert isinstance(domain, (Domain, str)), f"domain must be a Domain, but was a {type(domain)}"
+        if isinstance(domain, str):
+            self._domain = Domain[domain]
+        else:
+            self._domain = domain
         self._device = Device.CPU if isinstance(samples, np.ndarray) else Device.CUDA
         self.samples = samples
         self.sample_rate = sample_rate
@@ -64,7 +69,7 @@ class Signal:
         if domain == self.domain: return
 
 
-        if self.samples.dtype != complex:
+        if not np.issubdtype(self.samples.dtype, np.complexfloating):
             logger.warning("(Inverse) Fourier transform cast real-valued Signal to complex")
 
         match domain:
@@ -159,6 +164,49 @@ class Signal:
         # 3) CUDA is not enabled -> everything is on CPU already, but may need to be converted from list to array
         return self.xp.array(array)
 
+    def to_dataset(self) -> xr.Dataset:
+        """
+        Convert this Signal to an xarray Dataset that can be saved to a file
+
+        Outputs:
+        - [xr.Dataset]: the Dataset representing this Signal
+        """
+        original_device = self.device
+
+        self.to_device(Device.CPU)
+        dataset_dimensions = [f'index{index}' for index in range(self.sample_axis_nonnegative)] + ['samples'] + [f'component{index}' for index in range(-1 - self.sample_axis_negative)]
+        dataset = xr.Dataset(
+                data_vars = {
+                        'samples_real': xr.DataArray(self.samples.real, dims = dataset_dimensions),
+                        'samples_imaginary': xr.DataArray(self.samples.imag, dims = dataset_dimensions)
+                    },
+                attrs = {
+                        'sample_rate': self.sample_rate,
+                        'sample_axis': self.sample_axis,
+                        'domain': self.domain.name,
+                        'carrier_wavelength': self.carrier_wavelength
+                    }
+            )
+        self.to_device(original_device)
+        
+        return dataset
+
+    @classmethod
+    def from_dataset(cls, dataset: xr.Dataset):
+        """
+        Load a Signal from an xarray dataset
+
+        inputs:
+        - dataset [xr.Dataset]: the dataset to load the Signal from
+
+        outputs:
+        - [Signal]: the loaded Signal
+        """
+        return Signal(
+                samples = dataset['samples_real'].to_numpy() + 1j * dataset['samples_imaginary'].to_numpy(),
+                **dataset.attrs
+            )
+
     @property
     def device(self) -> Device:
         """
@@ -195,12 +243,12 @@ class Signal:
     def samples(self, value):
         """
         Set the samples of the signal in its current domain, shape [..., S, *C] where ... can be anything, S is the number of samples on axis self.sample_axis, and *C is any number of channels.
-        Note: value is not copied for the signal! Rather, a pointer is stored.
+        Note: value is not copied for the signal! Rather, a view is stored.
         """
         assert isinstance(value, (np.ndarray)) or ('cupy' in sys.modules and isinstance(value, cp.ndarray)), f"New samples must have type np.ndarray or cp.ndarray (if cupy is available), but had {type(value)}"
         assert len(value.shape) >= 1, f"New samples must have at least one dimension ..., S and *C, but had only {len(value.shape)}"
-        assert value.dtype in (complex, float, int), f"New samples must have datatype complex or float, but were {value.dtype}"
-        if hasattr(self, '_samples') and value.dtype != self.samples.dtype:
+        assert np.issubdtype(value.dtype, np.number), f"New samples must have datatype complex or float, but were {value.dtype}"
+        if hasattr(self, '_samples') and not np.issubdtype(value.dtype, self.samples.dtype) and not np.issubdtype(self.samples.dtype, value.dtype):
             logger.warning(f"Setting samples changed {self.samples.dtype} Signal to {value.dtype}")
         # assert '_samples' not in self.__dir__() or self.shape[:-2] + self.shape[-1:] == value.shape[:-2] + value.shape[-1:], f"All new samples dimensions must match the previous samples except dimension -2, but their dimensions were {self.shape} and {value.shape}"
         self._samples = self.xp.array(value)
@@ -373,7 +421,7 @@ class Signal:
 
     @duration.setter
     def duration(self, value):
-        raise AttributeError(f"duration cannot be set directly; use interpolated() instead")
+        raise AttributeError(f"duration cannot be set directly; set sample_time, sample_rate, or samples instead")
 
     @property
     def frequency(self) -> np.ndarray:

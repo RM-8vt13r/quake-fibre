@@ -6,10 +6,7 @@ import sys
 import logging
 
 import numpy as np
-try:
-    import cupy as cp
-except:
-    pass
+import xarray as xr
 
 from .fibre import Fibre
 from .signal import Signal
@@ -131,19 +128,38 @@ class FibreCNLSE(Fibre):
             )
         return signal
 
+    # @override
+    # def to_dict(self):
+    #     return super().to_dict() | {
+    #             'differential_phase_shifts': self.differential_phase_shifts.tolist(),
+    #             'major_angles':              self.major_angles.tolist()
+    #         }
+
     @override
-    def to_dict(self):
-        return super().to_dict() | {
-                'differential_phase_shifts': self.differential_phase_shifts.tolist(),
-                'major_angles':              self.major_angles.tolist()
-            }
+    def to_dataset(self) -> xr.Dataset:
+        dataset = super().to_dataset()
+        cnlse_dataset = xr.Dataset(
+                data_vars = {
+                    'differential_phase_shifts': xr.DataArray(self.differential_phase_shifts, dims = dataset['differential_group_delays'].dims),
+                    'major_angles': xr.DataArray(self.major_angles, dims = dataset['differential_group_delays'].dims)
+                }
+            )
+        return dataset.merge(cnlse_dataset)
+
+    # @classmethod
+    # @override
+    # def from_dict(cls, fibre_dict: dict):
+    #     fibre = super(FibreCNLSE, cls).from_dict(fibre_dict)
+    #     fibre.differential_phase_shifts = np.array(fibre_dict['differential_phase_shifts'])
+    #     fibre.major_angles              = np.array(fibre_dict['major_angles'])
+    #     return fibre
 
     @classmethod
     @override
-    def from_dict(cls, fibre_dict: dict):
-        fibre = super(FibreCNLSE, cls).from_dict(fibre_dict)
-        fibre.differential_phase_shifts = np.array(fibre_dict['differential_phase_shifts'])
-        fibre.major_angles              = np.array(fibre_dict['major_angles'])
+    def from_dataset(cls, dataset: xr.Dataset):
+        fibre = super(FibreCNLSE, cls).from_dataset(dataset)
+        fibre.differential_phase_shifts = dataset['differential_phase_shifts'].to_numpy()
+        fibre.major_angles              = dataset['major_angles'].to_numpy()
         return fibre
 
     @override
@@ -162,7 +178,7 @@ class FibreCNLSE(Fibre):
     @differential_phase_shifts.setter
     def differential_phase_shifts(self, value) -> None:
         assert isinstance(value, np.ndarray), f"New differential_phase_shifts value must be type np.ndarray, but was a {type(value)}"
-        assert value.dtype in (float, int), f"New differential_phase_shifts array must contain values of type float, but contained {value.dtype}"
+        assert np.issubdtype(value.dtype, np.floating) or np.issubdtype(value.dtype, np.integer), f"New differential_phase_shifts array must contain values of type float, but contained {value.dtype}"
         assert value.shape == (self.step_path.edge_count, self.realisation_count), f"New differential_phase_shifts array must have shape (self.step_path.edge_count ({self.step_path.edge_count}), self.realisation_count ({self.realisation_count})), but had shape {value.shape}"
         # assert np.all((value >= -np.pi) & (value < np.pi)), f"New differential_phase_shifts array must have values between -pi and pi"
         self._differential_phase_shifts = value.copy().astype(float)
@@ -177,7 +193,7 @@ class FibreCNLSE(Fibre):
     @major_angles.setter
     def major_angles(self, value) -> None:
         assert isinstance(value, np.ndarray), f"New major_angles value must be type np.ndarray, but was a {type(value)}"
-        assert value.dtype in (float, int), f"New major_angles array must contain values of type float, but contained {value.dtype}"
+        assert np.issubdtype(value.dtype, np.floating) or np.issubdtype(value.dtype, np.integer), f"New major_angles array must contain values of type float, but contained {value.dtype}"
         assert value.shape == (self.step_path.edge_count, self.realisation_count), f"New major_angles array must have shape (self.step_path.edge_count ({self.step_path.edge_count}), self.realisation_count ({self.realisation_count})), but had shape {value.shape}"
         # assert np.all((value >= -np.pi) & (value < np.pi)), f"New step_major_angles array must have values between -pi and pi"
         self._major_angles = value.copy().astype(float)

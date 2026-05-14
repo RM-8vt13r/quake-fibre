@@ -7,6 +7,7 @@ from configparser import ConfigParser
 
 import numpy as np
 import scipy as sp
+import xarray as xr
 
 from .fibre import Fibre
 from .signal import Signal
@@ -111,17 +112,34 @@ class FibreCoarseStep(Fibre):
             )
         return signal
 
+    # @override
+    # def to_dict(self):
+    #     return super().to_dict() | {
+    #             'scramblers': self.scramblers.tolist()
+    #         }
+
     @override
-    def to_dict(self):
-        return super().to_dict() | {
-                'scramblers': self.scramblers.tolist()
-            }
+    def to_dataset(self) -> xr.Dataset:
+        dataset = super().to_dataset()
+        coarse_step_dataset = xr.Dataset(
+                data_vars = {
+                    'scramblers': xr.DataArray(self.scramblers, dims = dataset['differential_group_delays'].dims + ['row', 'column']),
+                }
+            )
+        return dataset.merge(coarse_step_dataset)
+
+    # @classmethod
+    # @override
+    # def from_dict(cls, fibre_dict: dict):
+    #     fibre = super(FibreCoarseStep, cls).from_dict(fibre_dict)
+    #     fibre.scramblers = np.array(fibre_dict['scramblers'])
+    #     return fibre
 
     @classmethod
     @override
-    def from_dict(cls, fibre_dict: dict):
-        fibre = super(FibreCoarseStep, cls).from_dict(fibre_dict)
-        fibre.scramblers = np.array(fibre_dict['scramblers'])
+    def from_dataset(cls, dataset: xr.Dataset):
+        fibre = super(FibreCoarseStep, cls).from_dataset(dataset)
+        fibre.scramblers = dataset['scramblers'].to_numpy()
         return fibre
 
     @override
@@ -132,14 +150,14 @@ class FibreCoarseStep(Fibre):
     @property
     def scramblers(self) -> np.ndarray:
         """
-        [np.ndarray], dtype [complex] unitary matrices that scramble the state of polarisation
+        [np.ndarray], dtype [complex] unitary matrices that scramble the state of polarisation, shape [S, R, 2, 2]
         """
         return self._scramblers
 
     @scramblers.setter
     def scramblers(self, value) -> None:
         assert isinstance(value, np.ndarray), f"New scramblers value must be type np.ndarray, but was a {type(value)}"
-        assert value.dtype in (float, int, complex), f"New scramblers array must contain values of type complex, but contained {value.dtype}"
+        assert np.issubdtype(value.dtype, np.number), f"New scramblers array must contain values of type complex, but contained {value.dtype}"
         assert value.shape == (self.step_path.edge_count, self.realisation_count, 2, 2), f"New scramblers array must have shape (self.step_path.edge_count ({self.step_path.edge_count}), self.realisation_count ({self.realisation_count}), 2, 2), but had shape {value.shape}"
         assert np.allclose(value[..., 0, 0], value[..., 1, 1].conjugate()) and np.allclose(value[..., 1, 0], -value[..., 0, 1].conjugate()), f"New scramblers array must contain unitary matrices, but didn't"
         self._scramblers = value.copy().astype(complex)

@@ -11,8 +11,9 @@ try:
 except:
     pass
 import scipy as sp
+import xarray as xr
 
-from .constants import Domain
+from .constants import Domain, Device
 from .signal import Signal
 from .utilities import rotation_matrix
 
@@ -25,7 +26,7 @@ class Perturbation(Signal):
                 domain: Domain = Domain.TIME
             ):
         """
-        Create a new Signal.
+        Create a new Perturbation.
 
         Inputs:
         - start_time [float]: Absolute time in seconds at which this perturbation starts
@@ -70,7 +71,7 @@ class Perturbation(Signal):
     @override
     def copy(self):
         """
-        [Perturbation] return a copy of this signal
+        [Perturbation] return a copy of this perturbation
         """
         return Perturbation(
             start_time = self.start_time,
@@ -83,6 +84,49 @@ class Perturbation(Signal):
     @override
     def __eq__(self, other):
         return super().__eq__(other) and self.start_time == other.start_time
+
+    def to_dataset(self) -> xr.Dataset:
+        """
+        Convert this Perturbation to an xarray Dataset that can be saved to a file
+
+        Outputs:
+        - [xr.Dataset]: the Dataset representing this Perturbation
+        """
+        original_device = self.Device
+
+        self.to_device(Device.CPU)
+        dataset_dimensions = ['steps', 'samples']
+        dataset = xr.Dataset(
+                data_vars = {
+                        'strains': xr.DataArray(self.strains, dims = dataset_dimensions),
+                        'twists': xr.DataArray(self.twists, dims = dataset_dimensions),
+                    },
+                attrs = {
+                        'start_time': self.start_time,
+                        'sample_rate': self.sample_rate,
+                        'domain': self.domain.name,
+                    }
+            )
+        self.to_device(original_device)
+
+        return dataset
+
+    @classmethod
+    def from_dataset(cls, dataset: xr.Dataset):
+        """
+        Load a Perturbation from an xarray dataset
+
+        inputs:
+        - dataset [xr.Dataset]: the dataset to load the Perturbation from
+
+        outputs:
+        - [Perturbation]: the loaded signal
+        """
+        return Perturbation(
+                strains = dataset['strains'].to_numpy(),
+                twists = dataset['twists'].to_numpy(),
+                **dataset.attrs
+            )
 
     @property
     def start_time(self):

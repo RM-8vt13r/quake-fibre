@@ -3,6 +3,7 @@ A class representing a path over the earth's surface
 """
 import numpy as np
 import obspy as op
+import xarray as xr
 
 class Path:
     def __init__(self, longitudes: np.ndarray = None, latitudes: np.ndarray = None, lengths: np.ndarray = None):
@@ -73,42 +74,74 @@ class Path:
             self.latitudes.copy()
         )
 
-    def to_dict(self):
+    # def to_dict(self):
+    #     """
+    #     Represent this path as a dictionary.
+
+    #     Outputs:
+    #     - [dict] the dictionary representation of this path
+    #     """
+    #     path_dict = {
+    #         'lengths': self.lengths.tolist()
+    #     }
+
+    #     if self._longitudes is not None:
+    #         path_dict = path_dict | {
+    #             'longitudes': self.longitudes.tolist(),
+    #             'latitudes': self.latitudes.tolist()
+    #         }
+
+    #     return path_dict
+
+    def to_dataset(self) -> xr.Dataset:
         """
-        Represent this path as a dictionary.
+        Convert this Path to an xarray Dataset that can be saved to a file
 
         Outputs:
-        - [dict] the dictionary representation of this path
+        - [xr.Dataset]: the Dataset representing this Path
         """
-        path_dict = {
-            'lengths': self.lengths.tolist()
-        }
+        return xr.Dataset(
+            data_vars = {
+                    'longitudes': xr.DataArray(self.longitudes if self._longitudes is not None else None, dims = 'vertices'),
+                    'latitudes': xr.DataArray(self.latitudes if self._latitudes is not None else None, dims = 'vertices'),
+                    'lengths': xr.DataArray(self.lengths, dims = 'edges')
+                },
+            )
 
-        if self._longitudes is not None:
-            path_dict = path_dict | {
-                'longitudes': self.longitudes.tolist(),
-                'latitudes': self.latitudes.tolist()
-            }
+    # @classmethod
+    # def from_dict(cls, path_dict):
+    #     """
+    #     Instantiate a path from a saved dictionary.
 
-        return path_dict
+    #     Inputs:
+    #     - path_dict [dict]: a dictionary created using Path.to_dict()
+
+    #     Outputs:
+    #     - [Path] the loaded Path instance
+    #     """
+    #     if 'longitudes' in path_dict:
+    #         path = cls(np.array(path_dict['longitudes']), np.array(path_dict['latitudes']))
+    #         path._lengths = np.array(path_dict['lengths'])
+    #         return path
+
+    #     return Path(lengths = np.array(path_dict['lengths']))
 
     @classmethod
-    def from_dict(cls, path_dict):
+    def from_dataset(cls, dataset: xr.Dataset):
         """
-        Instantiate a path from a saved dictionary.
+        Load a Path from an xarray dataset
 
-        Inputs:
-        - path_dict [dict]: a dictionary created using Path.to_dict()
+        inputs:
+        - dataset [xr.Dataset]: the dataset to load the Path from
 
-        Outputs:
-        - [Path] the loaded Path instance
+        outputs:
+        - [Path]: the loaded Path
         """
-        if 'longitudes' in path_dict:
-            path = cls(np.array(path_dict['longitudes']), np.array(path_dict['latitudes']))
-            path._lengths = np.array(path_dict['lengths'])
-            return path
-
-        return Path(lengths = np.array(path_dict['lengths']))
+        return Path(
+                longitudes = dataset['longitudes'].to_numpy(),
+                latitudes = dataset['latitudes'].to_numpy(),
+                lengths = dataset['lengths'].to_numpy()
+            )
 
     def __iter__(self):
         """
