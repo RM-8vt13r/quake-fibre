@@ -94,22 +94,6 @@ class EarthquakeSubmarine(Earthquake):
             ):
         return super()._local_seismograms_postprocess(path.edge_count, syngine_stream)
 
-    # def _normal_accelerations_interpolate(self, earthquake_path: Path, path: Path, normal_accelerations: np.ndarray):
-    #     """
-    #     Part of request_normal_accelerations() that interpolates sparsely obtained normal accelerations to a denser path.
-    #     """
-    #     normal_accelerations_interpolated_flattened = np.zeros(shape = (normal_accelerations.shape[-2], path.edge_count)) # [T, C]
-    #     normal_accelerations_flattened = normal_accelerations[:, :, 0].transpose() # [I, T, 1] -> [T, I]
-
-    #     for channel_index, normal_acceleration_flattened in enumerate(normal_accelerations_flattened):
-    #         normal_accelerations_interpolated_flattened[channel_index] = np.interp(path.centre_positions, earthquake_path.centre_positions, normal_acceleration_flattened)
-
-    #     normal_accelerations_interpolated = normal_accelerations_interpolated_flattened.transpose()[:, :, None] # [T, C] -> [C, T, 1]
-
-    #     logger.info(f"Normal accelerations interpolated from {earthquake_path.edge_count} sections to {path.edge_count} sections")
-
-    #     return normal_accelerations_interpolated
-
     def get_normal_accelerations(self,
                 local_seismograms: Signal,
                 path: Path

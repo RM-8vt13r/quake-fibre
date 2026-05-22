@@ -32,7 +32,6 @@ try:
 except:
     pass
 from .constellation import Constellation, BPSK, QPSK, PSK8, QAM4, QAM16, QAM64
-from .dataset import create_attributes, create_dimensions, create_groups, create_variables, read_variable, write_variable
 from .drift import Drift
 from .earthquake_submarine import EarthquakeSubmarine
 from .earthquake_terrestrial import EarthquakeTerrestrial

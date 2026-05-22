@@ -38,22 +38,6 @@ class EarthquakeTerrestrial(Earthquake):
             ):
         return super()._local_seismograms_postprocess(path.vertex_count, syngine_stream)
 
-    # def _global_seismograms_interpolate(self, earthquake_path: Path, path: Path, displacements: np.ndarray):
-    #     """
-    #     Part of request_global_seismograms() that interpolates sparsely obtained seismograms to a denser path.
-    #     """
-    #     displacements_interpolated_flattened = np.zeros(shape = (np.prod(displacements.shape[-2:]), path.vertex_count)) # [T * D, C]
-    #     displacements_flattened = displacements.reshape((earthquake_path.vertex_count, np.prod(displacements.shape[-2:]))).transpose() # [I, T, D] -> [I, T * D] -> [T * D, I]
-
-    #     for channel_index, displacement_flattened in enumerate(displacements_flattened):
-    #         displacements_interpolated_flattened[channel_index] = np.interp(path.positions, earthquake_path.positions, displacement_flattened)
-
-    #     displacements_interpolated = displacements_interpolated_flattened.transpose().reshape((path.vertex_count, *displacements.shape[-2:])) # [T * D, C] -> [C, T * D] -> [C, T, D]
-
-    #     logger.info(f"Global seismograms interpolated from {earthquake_path.vertex_count} vertices to {path.vertex_count} vertices")
-
-    #     return displacements_interpolated
-
     def get_global_seismograms(self,
                 local_seismograms: Signal,
                 path: Path,

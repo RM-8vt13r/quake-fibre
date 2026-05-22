@@ -88,25 +88,6 @@ class Path:
             self.latitudes.copy()
         )
 
-    # def to_dict(self):
-    #     """
-    #     Represent this path as a dictionary.
-
-    #     Outputs:
-    #     - [dict] the dictionary representation of this path
-    #     """
-    #     path_dict = {
-    #         'lengths': self.lengths.tolist()
-    #     }
-
-    #     if self._longitudes is not None:
-    #         path_dict = path_dict | {
-    #             'longitudes': self.longitudes.tolist(),
-    #             'latitudes': self.latitudes.tolist()
-    #         }
-
-    #     return path_dict
-
     def save(self, dataset: nc.Dataset, step_start: int = None) -> nc.Dataset:
         """
         Save this Path in a file as a netCDF4 Dataset

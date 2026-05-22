@@ -215,14 +215,3 @@ class Perturbation(Signal):
     @twists.setter
     def twists(self, value):
         raise AttributeError("Cannot set twists after creating the Perturbation; make a new Perturbation instead")
-
-    # @property
-    # def twists_rotation_matrices(self):
-    #     """
-    #     [np.ndarray, cp.ndarray] The rotation matrices corresponding to twists, shape [K, T, 2, 2] where K is the number of fibre steps, T the number of perturbation time steps, and the last two dimensions contain the matrices.
-    #     """
-    #     return self.samples_time[:, :, 2:].reshape((*self.shape[:2], 2, 2)) if self._perturbation_presence[1] else None
-
-    # @twists_rotation_matrices.setter
-    # def twists_rotation_matrices(self, value):
-    #     raise AttributeError("Cannot set twists_rotation_matrices after creating the Perturbation; make a new Perturbation instead")
