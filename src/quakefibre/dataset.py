@@ -1,12 +1,8 @@
 """
 Wrapper around the netCDF4 Dataset, with extra functions to easily make bulk dimensions and variables.
 """
-from typing import override
-
 import numpy as np
 import netCDF4 as nc
-
-from .constants import Overwrite
 
 def create_dimensions(dataset: nc.Dataset, dimensions: (tuple, list), sizes: (tuple, list) = None) -> nc.Dataset:
     """
