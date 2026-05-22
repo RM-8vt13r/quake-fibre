@@ -7,12 +7,13 @@ from configparser import ConfigParser
 
 import numpy as np
 import scipy as sp
-import xarray as xr
+import netCDF4 as nc
 
 from .fibre import Fibre
 from .signal import Signal
 from .perturbation import Perturbation
-from .constants import Device, PAULI_VECTOR
+from .constants import Device, Dimension, PAULI_VECTOR
+from .dataset import create_dimensions, create_variables, write_variable, read_variable
 
 logger = logging.getLogger()
 
@@ -112,40 +113,27 @@ class FibreCoarseStep(Fibre):
             )
         return signal
 
-    # @override
-    # def to_dict(self):
-    #     return super().to_dict() | {
-    #             'scramblers': self.scramblers.tolist()
-    #         }
+    @override
+    def save(self, dataset: nc.Dataset, step_start: int = None, realisation_start: int = None, allow_attribute_overwrite: bool = False) -> nc.Dataset:
+        dataset = super().save(dataset, step_start, realisation_start, allow_attribute_overwrite)
+        create_dimensions(dataset, (Dimension.ROWS.name, Dimension.COLUMNS.name), (2, 2))
+        create_variables(dataset, ('scramblers_real', 'scramblers_imaginary'), 'f4', dataset.variables['differential_group_delays'].dimensions + (Dimension.ROWS.name, Dimension.COLUMNS.name))
+        write_variable(dataset, 'scramblers_real', self.scramblers.real, {Dimension.STEPS.name: step_start, Dimension.REALISATIONS.name: realisation_start})
+        write_variable(dataset, 'scramblers_imaginary', self.scramblers.imag, {Dimension.STEPS.name: step_start, Dimension.REALISATIONS.name: realisation_start})
+        dataset.sync()
+        return dataset
 
     @override
-    def to_dataset(self) -> xr.Dataset:
-        dataset = super().to_dataset()
-        coarse_step_dataset = xr.Dataset(
-                data_vars = {
-                    'scramblers': xr.DataArray(self.scramblers, dims = dataset['differential_group_delays'].dims + ['row', 'column']),
-                }
-            )
-        return dataset.merge(coarse_step_dataset)
-
-    # @classmethod
-    # @override
-    # def from_dict(cls, fibre_dict: dict):
-    #     fibre = super(FibreCoarseStep, cls).from_dict(fibre_dict)
-    #     fibre.scramblers = np.array(fibre_dict['scramblers'])
-    #     return fibre
-
     @classmethod
-    @override
-    def from_dataset(cls, dataset: xr.Dataset):
-        fibre = super(FibreCoarseStep, cls).from_dataset(dataset)
-        fibre.scramblers = dataset['scramblers'].to_numpy()
+    def load(cls, dataset: nc.Dataset, step_start: int = None, step_stop: int = None, realisation_start: int = None, realisation_stop: int = None):
+        fibre = super(FibreCoarseStep, cls).load(dataset, step_start, step_stop, realisation_start, realisation_stop)
+        fibre.scramblers = np.array(read_variable(dataset, 'scramblers_real', {Dimension.STEPS.name: step_start, Dimension.REALISATIONS.name: realisation_start}, {Dimension.STEPS.name: step_stop, Dimension.REALISATIONS.name: realisation_stop})) + 1j * np.array(read_variable(dataset, 'scramblers_imaginary', {Dimension.STEPS.name: step_start, Dimension.REALISATIONS.name: realisation_start}, {Dimension.STEPS.name: step_stop, Dimension.REALISATIONS.name: realisation_stop}))
         return fibre
 
     @override
     def __eq__(self, other) -> bool:
         return super().__eq__(other) and \
-            np.all(self.scramblers == other.scramblers)
+            np.allclose(self.scramblers, other.scramblers)
 
     @property
     def scramblers(self) -> np.ndarray:

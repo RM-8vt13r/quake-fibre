@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "quakefibre"
-version = "2026.05.13"
+version = "2026.05.22"
 description = "Dual-polarisation transmission through an optical fibre undergoing earthquake perturbations."
 readme = {file = "README.md", content-type = "text/markdown"}
 
@@ -46,7 +46,7 @@ requires-python = ">= 3.11"
 dependencies = [
     "numpy",
     "scipy",
-    "xarray",
+    "netCDF4",
     "obspy",
     "refractiveindex",
     "setuptools<81"

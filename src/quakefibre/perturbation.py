@@ -6,16 +6,14 @@ import logging
 logger = logging.getLogger()
 
 import numpy as np
-try:
-    import cupy as cp
-except:
-    pass
 import scipy as sp
-import xarray as xr
+import netCDF4 as nc
 
-from .constants import Domain, Device
+from .constants import Domain, Device, Dimension
 from .signal import Signal
 from .utilities import rotation_matrix
+from .path import Path
+from .dataset import create_attributes, create_dimensions, create_variables, write_variable, read_variable
 
 class Perturbation(Signal):
     def __init__(self,
@@ -68,6 +66,44 @@ class Perturbation(Signal):
                 carrier_wavelength = np.inf
             )
 
+    def interpolated(self, original_positions: np.ndarray, new_positions: np.ndarray):
+        """
+        Interpolate the Perturbation in space to fit a new path, using linear spline interpolation.
+
+        Inputs:
+        - original_positions [np.ndarray]: positions along the path where the Perturbation was first obtained
+        - new_positions [np.ndarray]: positions along the path to which to interpolate this perturbation
+
+        Outputs:
+        - [Perturbation] new Perturbation along new_path
+        """
+        assert isinstance(original_positions, (list, tuple, np.ndarray)), f"original_positions must be a np.ndarray, but was a {type(original_positions)}"
+        assert isinstance(new_positions, (list, tuple, np.ndarray)), f"new_positions must be a np.ndarray, but was a {type(new_positions)}"
+        original_positions = np.array(original_positions)
+        new_positions = np.array(new_positions)
+        assert len(original_positions.shape) == 1, f"original_positions must have one dimension, but had {len(original_positions.shape)}"
+        assert len(new_positions.shape) == 1, f"new_positions must have one dimension, but had {len(new_positions.shape)}"
+        assert len(original_positions) == self.shape[0], f"original_positions length ({len(original_positions)}) must match the first dimension of this Perturbation ({self.shape})"
+
+        self.to_domain(Domain.TIME)
+
+        new_strains = self.xp.zeros(shape = (len(new_positions), self.shape[1]), dtype = self.strains.dtype) if self.strains is not None else None
+        new_twists  = self.xp.zeros(shape = (len(new_positions), self.shape[1]), dtype = self.twists.dtype)  if self.twists  is not None else None
+        
+        for time_index in range(self.shape[1]):
+            if new_strains is not None:
+                new_strains[:, time_index] = self.xp.interp(new_positions, original_positions, self.strains[:, time_index])
+            if new_twists is not None:
+                new_twists[:, time_index]  = self.xp.interp(new_positions, original_positions, self.twists[:, time_index])
+        
+        return Perturbation(
+                self.start_time,
+                new_strains,
+                new_twists,
+                self.sample_rate,
+                self.domain
+            )
+
     @override
     def copy(self):
         """
@@ -85,47 +121,65 @@ class Perturbation(Signal):
     def __eq__(self, other):
         return super().__eq__(other) and self.start_time == other.start_time
 
-    def to_dataset(self) -> xr.Dataset:
+    def save(self, dataset: nc.Dataset, step_start: int = None, sample_start: int = None, allow_attribute_overwrite: bool = False) -> nc.Dataset:
         """
-        Convert this Perturbation to an xarray Dataset that can be saved to a file
+        Save this Perturbation in a file as a netCDF4 Dataset
+
+        Inputs:
+        - dataset [nc.Dataset]: The Dataset to save in.
+        - step_start [int]: If defined, treat step 0 in this Perturbation as step step_start in the netCDF file. This allows e.g. the gradual saving of a large Perturbation, by appending multiple smaller Perturbations.
+        - sample_start [int]: If defined, treat time index 0 in this Perturbation as time samples_start in the netCDF file. This allows e.g. the gradual saving of a large Perturbation, by appending multiple smaller Perturbations.
+        - allow_attribute_overwrite [bool]: If False, throws an error when you attempt to overwrite an existing dataset attribute with a new value.
 
         Outputs:
-        - [xr.Dataset]: the Dataset representing this Perturbation
+        - [nc.Dataset]: The dataset
         """
-        original_device = self.Device
-
+        original_device = self.device
         self.to_device(Device.CPU)
-        dataset_dimensions = ['steps', 'samples']
-        dataset = xr.Dataset(
-                data_vars = {
-                        'strains': xr.DataArray(self.strains, dims = dataset_dimensions),
-                        'twists': xr.DataArray(self.twists, dims = dataset_dimensions),
-                    },
-                attrs = {
-                        'start_time': self.start_time,
-                        'sample_rate': self.sample_rate,
-                        'domain': self.domain.name,
-                    }
-            )
+
+        create_dimensions(dataset, (Dimension.STEPS.name, Dimension.SAMPLES.name))
+        if self.strains is not None:
+            create_variables(dataset, 'strains', 'f4', (Dimension.STEPS.name, Dimension.SAMPLES.name))
+            write_variable(dataset, 'strains', self.strains, {Dimension.STEPS.name: step_start, Dimension.SAMPLES.name: sample_start})
+        if self.twists is not None:
+            create_variables(dataset, 'twists', 'f4', (Dimension.STEPS.name, Dimension.SAMPLES.name))
+            write_variable(dataset, 'twists', self.twists, {Dimension.STEPS.name: step_start, Dimension.SAMPLES.name: sample_start})
+        create_attributes(dataset, ('start_time', 'sample_rate', 'domain'), (self.start_time, self.sample_rate, self.domain.name), allow_attribute_overwrite)
+        dataset.sync()
+
         self.to_device(original_device)
 
         return dataset
 
     @classmethod
-    def from_dataset(cls, dataset: xr.Dataset):
+    def load(cls, dataset: nc.Dataset, step_start: int = None, step_stop: int = None, sample_start: int = None, sample_stop: int = None):
         """
-        Load a Perturbation from an xarray dataset
+        Load a Perturbation from a netCDF4 dataset
 
         inputs:
-        - dataset [xr.Dataset]: the dataset to load the Perturbation from
-
+        - dataset [nc.Dataset]: the Dataset to load the Perturbation from
+        - step_start [int]: Treat step index 0 in this Perturbation as index step_start in the netCDF file. This allows the partial loading of a large Perturbation.
+        - step_stop [int]: Treat step index -1 in this Perturbation as index step_stop - 1 in the netCDF file. This allows the partial loading of a large Perturbation.
+        - sample_start [int]: Treat time index 0 in this Perturbation as time step_start in the netCDF file. This allows the partial loading of a large Perturbation.
+        - sample_stop [int]: Treat time index -1 in this Perturbation as time step_stop - 1 in the netCDF file. This allows the partial loading of a large Perturbation.
+        
         outputs:
-        - [Perturbation]: the loaded signal
+        - [Perturbation]: the loaded Perturbation
         """
+        if 'strains' in dataset.variables:
+            strains = np.array(read_variable(dataset, 'strains', {Dimension.STEPS.name: step_start, Dimension.SAMPLES.name: sample_start}, {Dimension.STEPS.name: step_stop, Dimension.SAMPLES.name: sample_stop}))
+        else:
+            strains = None
+
+        if 'twists' in dataset.variables:
+            twists = np.array(read_variable(dataset, 'twists', {Dimension.STEPS.name: step_start, Dimension.SAMPLES.name: sample_start}, {Dimension.STEPS.name: step_stop, Dimension.SAMPLES.name: sample_stop}))
+        else:
+            twists = None
+
         return Perturbation(
-                strains = dataset['strains'].to_numpy(),
-                twists = dataset['twists'].to_numpy(),
-                **dataset.attrs
+                strains = strains,
+                twists = twists,
+                **{key: dataset.getncattr(key) for key in dataset.ncattrs()}
             )
 
     @property

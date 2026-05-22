@@ -22,42 +22,41 @@ class EarthquakeTerrestrial(Earthquake):
 
     @override
     def _local_seismograms_build_batches(self,
-                earthquake_path: Path,
+                path: Path,
                 batch_size: int
             ) -> (int, list[np.ndarray], np.ndarray, np.ndarray):
         """
         Part of request_local_seismograms() that builds batches of HTTP requests to send to Syngine.
         The EarthquakeTerrestrial version puts batch coordinates on the joints between fibre sections.
         """
-        return super()._local_seismograms_build_batches(earthquake_path.coordinates, batch_size)
+        return super()._local_seismograms_build_batches(path.coordinates, batch_size)
 
     @override
     def _local_seismograms_postprocess(self,
-                earthquake_path: Path,
+                path: Path,
                 syngine_stream: list
             ):
-        return super()._local_seismograms_postprocess(earthquake_path.vertex_count, syngine_stream)
+        return super()._local_seismograms_postprocess(path.vertex_count, syngine_stream)
 
-    def _global_seismograms_interpolate(self, earthquake_path: Path, path: Path, displacements: np.ndarray):
-        """
-        Part of request_global_seismograms() that interpolates sparsely obtained seismograms to a denser path.
-        """
-        displacements_interpolated_flattened = np.zeros(shape = (np.prod(displacements.shape[-2:]), path.vertex_count)) # [T * D, C]
-        displacements_flattened = displacements.reshape((earthquake_path.vertex_count, np.prod(displacements.shape[-2:]))).transpose() # [I, T, D] -> [I, T * D] -> [T * D, I]
+    # def _global_seismograms_interpolate(self, earthquake_path: Path, path: Path, displacements: np.ndarray):
+    #     """
+    #     Part of request_global_seismograms() that interpolates sparsely obtained seismograms to a denser path.
+    #     """
+    #     displacements_interpolated_flattened = np.zeros(shape = (np.prod(displacements.shape[-2:]), path.vertex_count)) # [T * D, C]
+    #     displacements_flattened = displacements.reshape((earthquake_path.vertex_count, np.prod(displacements.shape[-2:]))).transpose() # [I, T, D] -> [I, T * D] -> [T * D, I]
 
-        for channel_index, displacement_flattened in enumerate(displacements_flattened):
-            displacements_interpolated_flattened[channel_index] = np.interp(path.positions, earthquake_path.positions, displacement_flattened)
+    #     for channel_index, displacement_flattened in enumerate(displacements_flattened):
+    #         displacements_interpolated_flattened[channel_index] = np.interp(path.positions, earthquake_path.positions, displacement_flattened)
 
-        displacements_interpolated = displacements_interpolated_flattened.transpose().reshape((path.vertex_count, *displacements.shape[-2:])) # [T * D, C] -> [C, T * D] -> [C, T, D]
+    #     displacements_interpolated = displacements_interpolated_flattened.transpose().reshape((path.vertex_count, *displacements.shape[-2:])) # [T * D, C] -> [C, T * D] -> [C, T, D]
 
-        logger.info(f"Global seismograms interpolated from {earthquake_path.vertex_count} vertices to {path.vertex_count} vertices")
+    #     logger.info(f"Global seismograms interpolated from {earthquake_path.vertex_count} vertices to {path.vertex_count} vertices")
 
-        return displacements_interpolated
+    #     return displacements_interpolated
 
     def get_global_seismograms(self,
                 local_seismograms: Signal,
                 path: Path,
-                earthquake_path: Path,
             ):
         """
         Request seismograms from Syngine at fibre section endpoints, and transform them from the local axes at each coordinate to a shared global axes system.
@@ -65,15 +64,14 @@ class EarthquakeTerrestrial(Earthquake):
         Inputs:
         - local_seismograms [Signal]: signal containing all three displacement components in m, relative to local coordinates, shape [I, T, D] were D indexes longitudinal, latitudinal, and normal components in that order
         - path [Path]: Fibre path with C vertices
-        - earthquake_path [Path]: interpolated version of path with I vertices spaced step_length km apart
 
         Outputs:
         - [Signal] signal containing all three displacement components in m, relative to global coordinates, shape [C, T, D] where D indexes global x, y, z components in that order
         """
-        sin_long = np.sin(earthquake_path.longitudes)
-        sin_lat  = np.sin(earthquake_path.latitudes)
-        cos_long = np.cos(earthquake_path.longitudes)
-        cos_lat  = np.cos(earthquake_path.latitudes)
+        sin_long = np.sin(path.longitudes)
+        sin_lat  = np.sin(path.latitudes)
+        cos_long = np.cos(path.longitudes)
+        cos_lat  = np.cos(path.latitudes)
         zeros    = np.zeros_like(sin_long)
 
         transformation_global_to_local = np.array([
@@ -87,8 +85,8 @@ class EarthquakeTerrestrial(Earthquake):
             sample_rate = local_seismograms.sample_rate
         )
 
-        if earthquake_path != path:
-            global_seismograms.samples_time = self._global_seismograms_interpolate(earthquake_path, path, global_seismograms.samples_time)
+        # if earthquake_path != path:
+        #     global_seismograms.samples_time = self._global_seismograms_interpolate(earthquake_path, path, global_seismograms.samples_time)
         
         logger.debug("Returning global seismograms")
         return global_seismograms
@@ -154,7 +152,6 @@ class EarthquakeTerrestrial(Earthquake):
     @override
     def request_fibre_strains(self,
             path,
-            step_length,
             duration,
             batch_size,
             worker_count,
@@ -165,7 +162,6 @@ class EarthquakeTerrestrial(Earthquake):
 
         Inputs:
         - path [Path]: coordinates, length C
-        - step_length [float]: if not None, request earthquakes at I points along path spaced step_length apart in km.
         - duration [float]: duration from the earthquake origin for which to synthesize seismograms. If None, synthesize the whole event.
         - batch_size [int]: how many seismograms to request simultaneously; defaults to C
         - worker_count [int]: how many Syngine requests to make at most in parallel
@@ -174,10 +170,9 @@ class EarthquakeTerrestrial(Earthquake):
         Outputs:
         - [Signal] signal containing fibre strain, shape [C, T, 1].
         """
-        earthquake_path, local_seismograms = self.request_local_seismograms(path, step_length, duration, batch_size, worker_count, request_delay)
+        local_seismograms = self.request_local_seismograms(path, duration, batch_size, worker_count, request_delay)
 
-        global_seismograms = self.get_global_seismograms(local_seismograms, path, earthquake_path)
-        del earthquake_path
+        global_seismograms = self.get_global_seismograms(local_seismograms, path)
         del local_seismograms
 
         projected_seismograms = self.get_projected_seismograms(global_seismograms, path)

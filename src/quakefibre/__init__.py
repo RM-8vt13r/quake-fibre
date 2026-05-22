@@ -20,17 +20,19 @@ def _setup_cuda_local_path():
                         targets[target] = True
                         break
 
-        # for target, found in targets.items():
-        #     if not found:
-        #         raise ImportError(f"Local CUDA installation file {target}* not found in directory {nvidia_local_path}")
     except:
         pass
 
 _setup_cuda_local_path()
 del _setup_cuda_local_path
 
-from .constants import Domain, Device, Gain, PAULI_1, PAULI_2, PAULI_3, PAULI_VECTOR
+from .constants import Domain, Device, Dimension, Gain, PAULI_1, PAULI_2, PAULI_3, PAULI_VECTOR
+try:
+    from .constants import PAULI_1_CUDA, PAULI_2_CUDA, PAULI_3_CUDA, PAULI_VECTOR_CUDA
+except:
+    pass
 from .constellation import Constellation, BPSK, QPSK, PSK8, QAM4, QAM16, QAM64
+from .dataset import create_attributes, create_dimensions, create_groups, create_variables, read_variable, write_variable
 from .drift import Drift
 from .earthquake_submarine import EarthquakeSubmarine
 from .earthquake_terrestrial import EarthquakeTerrestrial

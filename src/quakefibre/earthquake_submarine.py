@@ -78,42 +78,41 @@ class EarthquakeSubmarine(Earthquake):
 
     @override
     def _local_seismograms_build_batches(self,
-                earthquake_path: Path,
+                path: Path,
                 batch_size: int
             ) -> (int, list[np.ndarray], np.ndarray, np.ndarray):
         """
         Part of request_local_seismograms() that builds batches of HTTP requests to send to Syngine.
         The EarthquakeSubmarine version puts batch coordinates in the centre of each fibre section.
         """
-        return super()._local_seismograms_build_batches(earthquake_path.centre_coordinates, batch_size)
+        return super()._local_seismograms_build_batches(path.centre_coordinates, batch_size)
 
     @override
     def _local_seismograms_postprocess(self,
-                earthquake_path: Path,
+                path: Path,
                 syngine_stream: list
             ):
-        return super()._local_seismograms_postprocess(earthquake_path.edge_count, syngine_stream)
+        return super()._local_seismograms_postprocess(path.edge_count, syngine_stream)
 
-    def _normal_accelerations_interpolate(self, earthquake_path: Path, path: Path, normal_accelerations: np.ndarray):
-        """
-        Part of request_normal_accelerations() that interpolates sparsely obtained normal accelerations to a denser path.
-        """
-        normal_accelerations_interpolated_flattened = np.zeros(shape = (normal_accelerations.shape[-2], path.edge_count)) # [T, C]
-        normal_accelerations_flattened = normal_accelerations[:, :, 0].transpose() # [I, T, 1] -> [T, I]
+    # def _normal_accelerations_interpolate(self, earthquake_path: Path, path: Path, normal_accelerations: np.ndarray):
+    #     """
+    #     Part of request_normal_accelerations() that interpolates sparsely obtained normal accelerations to a denser path.
+    #     """
+    #     normal_accelerations_interpolated_flattened = np.zeros(shape = (normal_accelerations.shape[-2], path.edge_count)) # [T, C]
+    #     normal_accelerations_flattened = normal_accelerations[:, :, 0].transpose() # [I, T, 1] -> [T, I]
 
-        for channel_index, normal_acceleration_flattened in enumerate(normal_accelerations_flattened):
-            normal_accelerations_interpolated_flattened[channel_index] = np.interp(path.centre_positions, earthquake_path.centre_positions, normal_acceleration_flattened)
+    #     for channel_index, normal_acceleration_flattened in enumerate(normal_accelerations_flattened):
+    #         normal_accelerations_interpolated_flattened[channel_index] = np.interp(path.centre_positions, earthquake_path.centre_positions, normal_acceleration_flattened)
 
-        normal_accelerations_interpolated = normal_accelerations_interpolated_flattened.transpose()[:, :, None] # [T, C] -> [C, T, 1]
+    #     normal_accelerations_interpolated = normal_accelerations_interpolated_flattened.transpose()[:, :, None] # [T, C] -> [C, T, 1]
 
-        logger.info(f"Normal accelerations interpolated from {earthquake_path.edge_count} sections to {path.edge_count} sections")
+    #     logger.info(f"Normal accelerations interpolated from {earthquake_path.edge_count} sections to {path.edge_count} sections")
 
-        return normal_accelerations_interpolated
+    #     return normal_accelerations_interpolated
 
     def get_normal_accelerations(self,
                 local_seismograms: Signal,
-                path: Path,
-                earthquake_path: Path,
+                path: Path
             ) -> Signal:
         """
         Request seismograms from Syngine at fibre section centres, and transform them to normal seafloor acceleration at each coordinate.
@@ -121,20 +120,19 @@ class EarthquakeSubmarine(Earthquake):
         Inputs:
         - local_seismograms [Signal]: signal containing all three displacement components in m, relative to local coordinates, shape [I, T, D] where D indexes longitudinal, latitudinal, and normal components in that order
         - path [Path]: Fibre path with C edges
-        - earthquake_path [Path]: interpolated version of path with I edges of step_length km
         
         Outputs:
         - [Signal] signal containing normal seafloor acceleration in m / s2, shape [C, T, 1].
         """
-        normal_displacements = np.zeros(shape = (earthquake_path.edge_count, local_seismograms.shape[1] + 2, 1))
+        normal_displacements = np.zeros(shape = (path.edge_count, local_seismograms.shape[1] + 2, 1))
         normal_displacements[:, 1:-1] = local_seismograms.samples_time[:, :, 2, None]
         normal_accelerations = Signal(
             samples = (normal_displacements[:, :-2] - 2 * normal_displacements[:, 1:-1] + normal_displacements[:, 2:]) * local_seismograms.sample_rate ** 2,
             sample_rate = local_seismograms.sample_rate
         )
 
-        if earthquake_path != path:
-            normal_accelerations.samples_time = self._normal_accelerations_interpolate(earthquake_path, path, normal_accelerations.samples_time)
+        # if earthquake_path != path:
+        #     normal_accelerations.samples_time = self._normal_accelerations_interpolate(earthquake_path, path, normal_accelerations.samples_time)
 
         logger.debug("Returning normal accelerations")
         return normal_accelerations
@@ -196,7 +194,6 @@ class EarthquakeSubmarine(Earthquake):
     @override
     def request_fibre_strains(self,
             path,
-            step_length,
             duration,
             batch_size,
             worker_count,
@@ -207,7 +204,6 @@ class EarthquakeSubmarine(Earthquake):
 
         Inputs:
         - path [Path]: coordinates, length C
-        - step_length [float]: if not None, request earthquakes at I points along path spaced step_length apart in km.
         - duration [float]: duration from the earthquake origin for which to synthesize seismograms. If None, synthesize the whole event.
         - batch_size [int]: how many seismograms to request simultaneously; defaults to C
         - worker_count [int]: how many Syngine requests to make at most in parallel
@@ -216,10 +212,9 @@ class EarthquakeSubmarine(Earthquake):
         Outputs:
         - [Signal] signal containing fibre strain, shape [C, T, 1].
         """
-        earthquake_path, local_seismograms = self.request_local_seismograms(path, step_length, duration, batch_size, worker_count, request_delay)
+        local_seismograms = self.request_local_seismograms(path, duration, batch_size, worker_count, request_delay)
 
-        normal_accelerations = self.get_normal_accelerations(local_seismograms, path, earthquake_path)
-        del earthquake_path
+        normal_accelerations = self.get_normal_accelerations(local_seismograms, path)
         del local_seismograms
 
         differential_pressures = self.get_differential_pressures(normal_accelerations, path)

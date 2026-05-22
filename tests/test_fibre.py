@@ -5,6 +5,7 @@ Test correctness of fibre.py
 from configparser import ConfigParser
 import copy
 import sys
+import tempfile
 
 try:
     import cupy as cp
@@ -12,6 +13,7 @@ except:
     print("cupy not available; skipping all CUDA tests..")
 import numpy as np
 import scipy as sp
+import netCDF4 as nc
 
 from quakefibre import FibreCoarseStep, FibreCNLSE, Transceiver, Device, Signal, Perturbation, Domain
 
@@ -244,14 +246,23 @@ def test_fibre_path():
         jones_matrices = channel.Jones(signal = signal)
         assert signal.xp.allclose(signal.xp.einsum('rbspq,rbsq->rbsp', jones_matrices.samples_frequency, signal.samples_frequency), propagated_signal.samples_frequency), f"Fibre propagation and Jones matrix produced different results"
 
-
-def test_fibre_dict():
+def test_saving():
     for channel in (FibreCNLSE(parameters), FibreCoarseStep(parameters)):
-        fibre_dict = channel.to_dict()
-        channel_copy = type(channel).from_dict(fibre_dict)
-        assert channel == channel_copy, f"Channel was not copied properly using to_dict and from_dict"
+        file = tempfile.NamedTemporaryFile(suffix = '.nc')
+        channel_dataset = nc.Dataset(file.name, 'w')
+        channel.save(channel_dataset)
+        channel_dataset_loaded = nc.Dataset(file.name, 'r')
+        channel_loaded = type(channel).load(channel_dataset_loaded)
+        file.close()
+
+        assert channel == channel_loaded, f"{type(channel).__name__} changed after conversion to- and from a Dataset"
 
     for channel in (FibreCNLSE(parameters_geographic), FibreCoarseStep(parameters_geographic)):
-        fibre_dict = channel.to_dict()
-        channel_copy = type(channel).from_dict(fibre_dict)
-        assert channel == channel_copy, f"Geographic channel was not copied propertly using to_dict and from_dict"
+        file = tempfile.NamedTemporaryFile(suffix = '.nc')
+        channel_dataset = nc.Dataset(file.name, 'w')
+        channel.save(channel_dataset)
+        channel_dataset_loaded = nc.Dataset(file.name, 'r')
+        channel_loaded = type(channel).load(channel_dataset_loaded)
+        file.close()
+
+        assert channel == channel_loaded, f"Geographic {type(channel).__name__} changed after conversion to- and from a Dataset"

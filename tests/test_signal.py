@@ -3,6 +3,7 @@ Test correctness of signal.py
 """
 from configparser import ConfigParser
 import sys
+import os
 import tempfile
 
 import numpy as np
@@ -10,9 +11,9 @@ try:
     import cupy as cp
 except:
     print("cupy not available; skipping all CUDA tests..")
-import xarray as xr
+import netCDF4 as nc
 
-from quakefibre import Transceiver, Domain, Device, Signal
+from quakefibre import Transceiver, Domain, Dimension, Device, Signal
 
 parameters = ConfigParser()
 parameters["TRANSCEIVER"] = {
@@ -54,21 +55,26 @@ def test_signal():
         signal2 = signal.copy()
         assert signal == signal2, f"{device} signal copying was not successful"
 
-        signal2.resample(signal2.sample_rate * 10)
-        assert signal2.shape == signal.shape[:-2] + (signal.shape[-2] * 10, signal.shape[-1]), f"{device} expected signal length {signal2.shape[-2] * 10} after resampling, but got {signal.shape[-2]}"
+        signal2_upsampled = signal2.resampled(signal2.sample_rate * 10)
+        assert signal2_upsampled.shape == signal2.shape[:-2] + (signal2.shape[-2] * 10, signal2.shape[-1]), f"{device} expected signal length {signal2.shape[-2] * 10} after upsampling, but got {signal2_upsampled.shape[-2]}"
         
-        signal2.resample(signal.sample_rate)
-        assert signal2.shape == signal.shape, f"{device} expected signal length {signal.shape[-2]} after double resampling, but got {signal2.shape[-2]}"
-        assert signal.xp.allclose(signal2.samples_time, signal.samples_time), f"{device} double resampled signal does not match original signal"
+        signal2_updownsampled = signal2_upsampled.resampled(signal2.sample_rate)
+        assert signal2_updownsampled.shape == signal.shape, f"{device} expected signal length {signal.shape[-2]} after up- and downsampling, but got {signal2_updownsampled.shape[-2]}"
+        assert signal.xp.allclose(signal2_updownsampled.samples_time, signal.samples_time), f"{device} up- and downsampled signal does not match original signal"
 
-        signal_dataset = signal.to_dataset()
-        file = tempfile.TemporaryFile()
-        signal_dataset.to_netcdf(file)
-        loaded_signal_dataset = xr.load_dataset(file)
+        file = tempfile.NamedTemporaryFile(suffix = '.nc')
+        signal_dataset = nc.Dataset(file.name, 'w')
+        signal.save(signal_dataset, step_starts = {Dimension.SAMPLES.name: 2})
+        signal_dataset_loaded = nc.Dataset(file.name, 'r')
+        signal_loaded = Signal.load(signal_dataset_loaded, step_starts = {Dimension.SAMPLES.name: 2})
+        signal_loaded_partial = Signal.load(signal_dataset_loaded, step_starts = {Dimension.SAMPLES.name: 1}, step_stops = {Dimension.SAMPLES.name: 90})
         file.close()
 
-        assert signal == Signal.from_dataset(signal_dataset), f"Signal changed after conversion to- and from a Dataset"
-        assert signal == Signal.from_dataset(loaded_signal_dataset), f"Signal changed after conversion from a saved Dataset file"
+        assert signal == signal_loaded, f"Signal changed after conversion to- and from a Dataset"
+        assert signal.xp.allclose(
+                signal.samples_time[*[slice(None)] * signal.sample_axis_nonnegative, :90 - 2], # loaded step_stop - saved step_start
+                signal_loaded_partial.samples_time[*[slice(None)] * signal.sample_axis_nonnegative, 2 - 1:] # saved step_start - loaded step_start
+            ), f"Partial Signal changed after conversion to- and from a Dataset"
 
     signal.to_device(Device.CPU)
     signal_cuda = signal.copy()

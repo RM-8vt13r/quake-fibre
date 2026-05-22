@@ -137,7 +137,6 @@ class Earthquake(PerturbationEvent, ABC):
 
     def _local_seismograms_preprocess(self,
             path: Path,
-            step_length: float,
             duration: float,
             batch_size: int,
             worker_count: int,
@@ -146,10 +145,8 @@ class Earthquake(PerturbationEvent, ABC):
         """
         Part of request_local_seismograms() that verifies and prepares the parameters before sending requests to Syngine.
         """
-        earthquake_path = path if step_length is None else path.interpolated(step_length)
-
         if batch_size is None:
-            batch_size = earthquake_path.vertex_count
+            batch_size = path.vertex_count
 
         assert isinstance(batch_size, (int, np.integer)), f"batch_size must be an int, but was a {type(batch_size)}"
         assert isinstance(worker_count, (int, np.integer)), f"worker_count must be an int, but was a {type(worker_count)}"
@@ -159,7 +156,7 @@ class Earthquake(PerturbationEvent, ABC):
             assert isinstance(duration, (int, np.integer, float, np.floating)), f"duration should have type float, but was a {type(duration)}"
             assert duration > 0, f"duration must be positive, but wasn't"
             
-        return earthquake_path, batch_size
+        return batch_size
 
     @abstractmethod
     def _local_seismograms_build_batches(self,
@@ -281,7 +278,6 @@ class Earthquake(PerturbationEvent, ABC):
 
     def request_local_seismograms(self,
                 path: Path,
-                step_length: float = None,
                 duration: float = None,
                 batch_size: int = None,
                 worker_count: int = 1,
@@ -292,20 +288,18 @@ class Earthquake(PerturbationEvent, ABC):
 
         Inputs:
         - path [Path]: coordinates, length C
-        - step_length [float]: if not None, request earthquakes at I points along path spaced step_length apart in km.
         - duration [float]: duration from the earthquake origin for which to synthesize seismograms. If None, synthesize the whole event.
         - batch_size [int]: how many seismograms to request simultaneously; defaults to C
         - worker_count [int]: how many Syngine requests to make at most in parallel
         - request_delay [float]: minimum delay in seconds between launching two Syngine requests
         
         Outputs:
-        - [Path] interpolated version of path with vertices spaced step_length km apart
-        - [Signal] signal containing all three displacement components in m, shape [I, T, D] where D indexes longitudinal, latitudinal, and normal components in that order.
+        - [Signal] signal containing all three displacement components in m, shape [C, T, D] where D indexes longitudinal, latitudinal, and normal components in that order.
         """
-        earthquake_path, batch_size = self._local_seismograms_preprocess(path, step_length, duration, batch_size, worker_count, request_delay)
-        coordinate_batch_count, batch_coordinates, batch_coordinate_starts, batch_coordinate_stops = self._local_seismograms_build_batches(earthquake_path, batch_size)
+        batch_size = self._local_seismograms_preprocess(path, duration, batch_size, worker_count, request_delay)
+        coordinate_batch_count, batch_coordinates, batch_coordinate_starts, batch_coordinate_stops = self._local_seismograms_build_batches(path, batch_size)
         syngine_stream = self._local_seismograms_send_requests(duration, coordinate_batch_count, batch_coordinates, batch_coordinate_starts, batch_coordinate_stops, worker_count, request_delay)
-        displacements, sample_time = self._local_seismograms_postprocess(earthquake_path, syngine_stream)
+        displacements, sample_time = self._local_seismograms_postprocess(path, syngine_stream)
         
         displacements_local = Signal(
                 samples = displacements,
@@ -313,7 +307,7 @@ class Earthquake(PerturbationEvent, ABC):
             )
 
         logger.debug("Returning local seismograms")
-        return earthquake_path, displacements_local
+        return displacements_local
 
     # @override
     # def get_perturbations(self,

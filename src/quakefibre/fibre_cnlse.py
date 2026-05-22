@@ -6,17 +6,14 @@ import sys
 import logging
 
 import numpy as np
-import xarray as xr
+import netCDF4 as nc
 
 from .fibre import Fibre
 from .signal import Signal
 from .perturbation import Perturbation
 from .utilities import rotation_matrix
-from .constants import Device, PAULI_3
-try:
-    from .constants import PAULI_3_CUDA
-except:
-    pass
+from .constants import Device, Dimension
+from .dataset import create_variables, read_variable, write_variable
 
 logger = logging.getLogger()
 
@@ -128,45 +125,28 @@ class FibreCNLSE(Fibre):
             )
         return signal
 
-    # @override
-    # def to_dict(self):
-    #     return super().to_dict() | {
-    #             'differential_phase_shifts': self.differential_phase_shifts.tolist(),
-    #             'major_angles':              self.major_angles.tolist()
-    #         }
+    @override
+    def save(self, dataset: nc.Dataset, step_start: int = None, realisation_start: int = None, allow_attribute_overwrite: bool = False) -> nc.Dataset:
+        dataset = super().save(dataset, step_start, realisation_start, allow_attribute_overwrite)
+        create_variables(dataset, ('differential_phase_shifts', 'major_angles'), 'f4', dataset.variables['differential_group_delays'].dimensions)
+        write_variable(dataset, 'differential_phase_shifts', self.differential_phase_shifts, {Dimension.STEPS.name: step_start, Dimension.REALISATIONS.name: realisation_start})
+        write_variable(dataset, 'major_angles', self.major_angles, {Dimension.STEPS.name: step_start, Dimension.REALISATIONS.name: realisation_start})
+        dataset.sync()
+        return dataset
 
     @override
-    def to_dataset(self) -> xr.Dataset:
-        dataset = super().to_dataset()
-        cnlse_dataset = xr.Dataset(
-                data_vars = {
-                    'differential_phase_shifts': xr.DataArray(self.differential_phase_shifts, dims = dataset['differential_group_delays'].dims),
-                    'major_angles': xr.DataArray(self.major_angles, dims = dataset['differential_group_delays'].dims)
-                }
-            )
-        return dataset.merge(cnlse_dataset)
-
-    # @classmethod
-    # @override
-    # def from_dict(cls, fibre_dict: dict):
-    #     fibre = super(FibreCNLSE, cls).from_dict(fibre_dict)
-    #     fibre.differential_phase_shifts = np.array(fibre_dict['differential_phase_shifts'])
-    #     fibre.major_angles              = np.array(fibre_dict['major_angles'])
-    #     return fibre
-
     @classmethod
-    @override
-    def from_dataset(cls, dataset: xr.Dataset):
-        fibre = super(FibreCNLSE, cls).from_dataset(dataset)
-        fibre.differential_phase_shifts = dataset['differential_phase_shifts'].to_numpy()
-        fibre.major_angles              = dataset['major_angles'].to_numpy()
+    def load(cls, dataset: nc.Dataset, step_start: int = None, step_stop: int = None, realisation_start: int = None, realisation_stop: int = None):
+        fibre = super(FibreCNLSE, cls).load(dataset, step_start, step_stop, realisation_start, realisation_stop)
+        fibre.differential_phase_shifts = np.array(read_variable(dataset, 'differential_phase_shifts', {Dimension.STEPS.name: step_start, Dimension.REALISATIONS.name: realisation_start}, {Dimension.STEPS.name: step_stop, Dimension.REALISATIONS.name: realisation_stop}))
+        fibre.major_angles              = np.array(read_variable(dataset, 'major_angles', {Dimension.STEPS.name: step_start, Dimension.REALISATIONS.name: realisation_start}, {Dimension.STEPS.name: step_stop, Dimension.REALISATIONS.name: realisation_stop}))
         return fibre
 
     @override
     def __eq__(self, other) -> bool:
         return super().__eq__(other) and \
-            np.all(self._differential_phase_shifts == other._differential_phase_shifts) and \
-            np.all(self._major_angles              == other._major_angles)
+            np.allclose(self._differential_phase_shifts, other._differential_phase_shifts) and \
+            np.allclose(self._major_angles, other._major_angles)
 
     @property
     def differential_phase_shifts(self) -> np.ndarray:

@@ -11,10 +11,11 @@ try:
     import cupy as cp
 except:
     pass
-import xarray as xr
+import netCDF4 as nc
 
-from .constants import Domain, Device, Gain
+from .constants import Domain, Device, Dimension, Gain
 from .utilities import dB2linear, linear2dB
+from .dataset import create_attributes, create_dimensions, create_variables, read_variable, write_variable
 
 logger = logging.getLogger()
 
@@ -80,26 +81,32 @@ class Signal:
 
         self._domain = domain
 
-    def resample(self, new_sample_rate: float):
+    def resampled(self, new_sample_rate: float):
         """
-        Change the sample rate whilst keeping signal duration constant.
+        Return a copy of the signal, changing the sample rate whilst keeping signal duration constant.
         Resamples the signal using zeropadding or truncation in the frequency domain.
 
         Inputs:
         - new_sample_rate [float]: The new sample rate.
-        """
-        old_sample_rate  = self.sample_rate
-        self.sample_rate = new_sample_rate
 
+        Outputs:
+        - [Signal] the new Signal
+        """
         old_signal_length = self.shape[self.sample_axis]
-        new_signal_length = round(self.shape[self.sample_axis] * self.sample_rate / old_sample_rate)
+        new_signal_length = round(self.shape[self.sample_axis] * new_sample_rate / self.sample_rate)
         
         new_samples_frequency = self.xp.zeros(shape = (*self.shape[:self.sample_axis], new_signal_length, *self.shape[self.sample_axis_nonnegative + 1:]), dtype = complex)
         sample_limit = int(min(old_signal_length, new_signal_length) / 2)
         new_samples_frequency[..., :sample_limit, *(slice(None),) * -(self.sample_axis_negative + 1)]  = self.samples_frequency[..., :sample_limit, *(slice(None),) * -(self.sample_axis_negative + 1)]
         new_samples_frequency[..., -sample_limit:, *(slice(None),) * -(self.sample_axis_negative + 1)] = self.samples_frequency[..., -sample_limit:, *(slice(None),) * -(self.sample_axis_negative + 1)]
 
-        self.samples_frequency = new_samples_frequency
+        return Signal(
+                samples = new_samples_frequency,
+                sample_rate = new_sample_rate,
+                sample_axis = self.sample_axis,
+                domain = Domain.FREQUENCY,
+                carrier_wavelength = self.carrier_wavelength
+            )
 
     def __eq__(self, other) -> bool:
         other_device = other.device
@@ -164,47 +171,49 @@ class Signal:
         # 3) CUDA is not enabled -> everything is on CPU already, but may need to be converted from list to array
         return self.xp.array(array)
 
-    def to_dataset(self) -> xr.Dataset:
+    def save(self, dataset: nc.Dataset, step_starts: dict = {}, allow_attribute_overwrite: bool = False) -> nc.Dataset:
         """
-        Convert this Signal to an xarray Dataset that can be saved to a file
+        Save this Signal in a file as a netCDF4 Dataset
+
+        Inputs:
+        - dataset [nc.Dataset]: Dataset to save in.
+        - step_starts [dict]: {dimension [int, str]: step_start [int]} pairs. For each key, treat dimension index 0 in this Signal as index step_start in the netCDF file. This allows e.g. the gradual saving of a large Signal, by appending multiple smaller Signals.
+        - allow_attribute_overwrite [bool]: If False, throws an error when you attempt to overwrite an existing dataset attribute with a new value.
 
         Outputs:
-        - [xr.Dataset]: the Dataset representing this Signal
+        - [nc.Dataset]: the Dataset
         """
         original_device = self.device
-
         self.to_device(Device.CPU)
-        dataset_dimensions = [f'index{index}' for index in range(self.sample_axis_nonnegative)] + ['samples'] + [f'component{index}' for index in range(-1 - self.sample_axis_negative)]
-        dataset = xr.Dataset(
-                data_vars = {
-                        'samples_real': xr.DataArray(self.samples.real, dims = dataset_dimensions),
-                        'samples_imaginary': xr.DataArray(self.samples.imag, dims = dataset_dimensions)
-                    },
-                attrs = {
-                        'sample_rate': self.sample_rate,
-                        'sample_axis': self.sample_axis,
-                        'domain': self.domain.name,
-                        'carrier_wavelength': self.carrier_wavelength
-                    }
-            )
-        self.to_device(original_device)
+
+        dataset_dimensions = [Dimension.DIMENSION.name + str(index + 1) for index in range(self.sample_axis_nonnegative)] + [Dimension.SAMPLES.name] + [Dimension.CHANNELS.name + str(component + 1) for component in range(-1 - self.sample_axis_negative)]
+        create_dimensions(dataset, dataset_dimensions)
+        create_variables(dataset, ('samples_real', 'samples_imaginary'), 'f4', dataset.dimensions)
+        write_variable(dataset, 'samples_real', self.samples.real, step_starts)
+        write_variable(dataset, 'samples_imaginary', self.samples.imag, step_starts)
+        create_attributes(dataset, ('sample_rate', 'sample_axis', 'domain', 'carrier_wavelength'), (self.sample_rate, self.sample_axis_nonnegative, self.domain.name, self.carrier_wavelength), allow_attribute_overwrite)
+        dataset.sync()
         
+        self.to_device(original_device)
+
         return dataset
 
     @classmethod
-    def from_dataset(cls, dataset: xr.Dataset):
+    def load(cls, dataset: nc.Dataset, step_starts: dict = {}, step_stops: dict = {}):
         """
-        Load a Signal from an xarray dataset
+        Load a Signal from a netCDF4 Dataset
 
         inputs:
-        - dataset [xr.Dataset]: the dataset to load the Signal from
-
+        - dataset [nc.Dataset]: the Dataset to load the Signal from
+        - step_starts [dict]: {dimension [int, str]: step_start [int]} pairs. For each key, treat dimension index 0 in this Signal as index step_start in the netCDF file. This allows the partial loading of a large Signal.
+        - step_stops [dict]: {dimension [int, str]: step_stop [int]} pairs. For each key, treat dimension index -1 + 1 in this Signal as index step_stop in the netCDF file. This allows the partial loading of a large Signal.
+        
         outputs:
         - [Signal]: the loaded Signal
         """
         return Signal(
-                samples = dataset['samples_real'].to_numpy() + 1j * dataset['samples_imaginary'].to_numpy(),
-                **dataset.attrs
+                samples = np.array(read_variable(dataset, 'samples_real', step_starts, step_stops)) + 1j * np.array(read_variable(dataset, 'samples_imaginary', step_starts, step_stops)),
+                **{key: dataset.getncattr(key) for key in dataset.ncattrs()}
             )
 
     @property

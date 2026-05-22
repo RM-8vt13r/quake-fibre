@@ -15,14 +15,16 @@ try:
     import cupy as cp
 except:
     pass
+import netCDF4 as nc
 import obspy as op
 import refractiveindex
 
-from .constants import Device, Domain, ModulusModel, Gain
+from .constants import Device, Domain, Dimension, ModulusModel, Gain
 from .utilities import dB2linear
 from .signal import Signal
 from .perturbation import Perturbation
 from .path import Path
+from .dataset import create_attributes, create_dimensions, create_groups, create_variables, write_variable, read_variable
 
 logger = logging.getLogger()
 
@@ -503,180 +505,95 @@ class Fibre(ABC):
         return sp.constants.speed_of_light / self.material.get_refractive_index(carrier_wavelength) / 1000
 
     @abstractmethod
-    def to_dict(self) -> dict:
+    def save(self, dataset: nc.Dataset, step_start: int = None, realisation_start: int = None, allow_attribute_overwrite: bool = False) -> nc.Dataset:
         """
-        Represent this fibre (and its exact realisations) as a dictionary.
+        Save this Fibre (and its exact realisations) in a file as a netCDF4 Dataset
+
+        Inputs:
+        - dataset [nc.Dataset]: The Dataset to save in.
+        - step_start [int]: If defined, treat step 0 in this Fibre as step step_start in the netCDF file. This allows e.g. the gradual saving of a large Fibre, by appending multiple smaller Fibres.
+        - realisation_start [int]: If defined, treat realisation 0 in this Fibre as realisation realisation_start in the netCDF file. This allows e.g. the gradual saving of a large Fibre, by appending realisations.
+        - allow_attribute_overwrite [bool]: If False, throws an error when you attempt to overwrite an existing dataset attribute with a new value.
 
         Outputs:
-        - [dict] The dictionary representation of this fibre
+        - [nc.Dataset]: The Dataset
         """
-        fibre_dict = {
-            'correlation_length':           self.correlation_length,
-            'beat_length':                  self.beat_length,
-            'span_path':                    self.span_path.to_dict(),
-            'step_path':                    self.step_path.to_dict(),
-            'steps_per_span':               self.steps_per_span,
-            'step_gains':                   self.step_gains_dB.tolist(),
-            'chromatic_dispersion':         self.chromatic_dispersion,
-            'nonlinearity':                 self.nonlinearity,
-            'attenuation':                  self.attenuation_dB,
-            'noise_figure':                 self.noise_figure_dB,
-            'polarisation_mode_dispersion': self.polarisation_mode_dispersion,
-            'realisation_count':            self.realisation_count,
-            'photoelasticity':              self.photoelasticity,
-            'modulus_model':                self.modulus_model.name,
-            'differential_group_delays':    self.differential_group_delays.tolist()
-        }
-
+        create_groups(dataset, ('span_path', 'step_path'))
+        self.span_path.save(dataset.groups['span_path'])
+        self.step_path.save(dataset.groups['step_path'])
         if self._path is not None:
-            fibre_dict = fibre_dict | {
-                'path': self.path.to_dict()
-            }
+            dataset.createGroup('path')
+            self.path.save(dataset.groups['path'])
 
-        return fibre_dict
-
-    @abstractmethod
-    def to_dataset(self) -> xr.Dataset:
-        """
-        Convert this Fibre (and its exact realisations) to an xarray Dataset that can be saved to a file
-
-        Outputs:
-        - [xr.Dataset]: the Dataset representing this Fibre
-        """
-        span_path_dataset = self.span_path.to_dataset()
-        span_path_dataset = span_path_dataset.rename({name: 'span_' + name for name in span_path_dataset.data_vars + span_path_dataset.dims})
-
-        step_path_dataset = self.step_path.to_dataset()
-
-        if self._path is not None:
-            path_dataset = self.path.to_dataset()
-            path_dataset = path_dataset.rename({name: 'path_' + name for name in path_dataset.data_vars + path_dataset.dims})
-        else:
-            path_dataset = None
-
-        dataset = xr.Dataset(
-                data_vars = {
-                        'step_gains_dB': xr.DataArray(self.step_gains, dims = [step_path_dataset['lengths'].dims[0]]),
-                        'differential_group_delays': xr.DataArray(self.differential_group_delays, dims = [step_path_dataset['lengths'].dims[0], 'realisations'])
-                    },
-                attrs = {
-                        'correlation_length':           self.correlation_length,
-                        'beat_length':                  self.beat_length,
-                        'steps_per_span':               self.steps_per_span,
-                        'chromatic_dispersion':         self.chromatic_dispersion,
-                        'nonlinearity':                 self.nonlinearity,
-                        'attenuation':                  self.attenuation,
-                        'noise_figure':                 self.noise_figure_dB,
-                        'polarisation_mode_dispersion': self.polarisation_mode_dispersion,
-                        'realisation_count':            self.realisation_count,
-                        'photoelasticity':              self.photoelasticity,
-                        'modulus_model':                self.modulus_model
-                    }
-            )
-
-        dataset = dataset.merge(span_path_dataset)
-        dataset = dataset.merge(step_path_dataset)
-        if path_dataset is not None:
-            dataset = dataset.merge(path_dataset)
+        create_dimensions(dataset, (Dimension.STEPS.name, Dimension.REALISATIONS.name))
+        create_variables(dataset, 'step_gains_dB', 'f4', (Dimension.STEPS.name,))
+        create_variables(dataset, 'differential_group_delays', 'f4', (Dimension.STEPS.name, Dimension.REALISATIONS.name))
+        write_variable(dataset, 'step_gains_dB', self.step_gains_dB, {Dimension.STEPS.name: step_start})
+        write_variable(dataset, 'differential_group_delays', self.differential_group_delays, {Dimension.STEPS.name: step_start, Dimension.REALISATIONS.name: realisation_start})
+        create_attributes(dataset,
+            ('correlation_length', 'beat_length', 'steps_per_span', 'chromatic_dispersion', 'nonlinearity', 'attenuation', 'noise_figure', 'polarisation_mode_dispersion', 'realisation_count', 'photoelasticity', 'modulus_model'),
+            (self.correlation_length, self.beat_length, self.steps_per_span, self.chromatic_dispersion, self.nonlinearity, self.attenuation_dB, self.noise_figure_dB, self.polarisation_mode_dispersion, self.realisation_count, self.photoelasticity, self.modulus_model.name),
+            allow_attribute_overwrite
+        )
+        dataset.sync()
 
         return dataset
 
-    # @classmethod
-    # @abstractmethod
-    # def from_dict(cls, fibre_dict: dict):
-    #     """
-    #     Instantiate a fibre from a saved dictionary.
-
-    #     Inputs:
-    #     - fibre_dict [dict]: a dictionary created using Fibre.to_dict()
-
-    #     Outputs:
-    #     - [Fibre] the loaded fibre instance.
-    #     """
-    #     parameters = ConfigParser()
-    #     parameters.add_section('FIBRE')
-    #     parameters.set('FIBRE', 'correlation_length',           str(fibre_dict['correlation_length']))
-    #     parameters.set('FIBRE', 'beat_length',                  str(fibre_dict['beat_length']))
-    #     parameters.set('FIBRE', 'steps_per_span',               str(fibre_dict['steps_per_span']))
-    #     parameters.set('FIBRE', 'chromatic_dispersion',         str(fibre_dict['chromatic_dispersion']))
-    #     parameters.set('FIBRE', 'nonlinearity',                 str(fibre_dict['nonlinearity']))
-    #     parameters.set('FIBRE', 'attenuation',                  str(fibre_dict['attenuation']))
-    #     parameters.set('FIBRE', 'noise_figure',                 str(fibre_dict['noise_figure']))
-    #     parameters.set('FIBRE', 'polarisation_mode_dispersion', str(fibre_dict['polarisation_mode_dispersion']))
-    #     parameters.set('FIBRE', 'realisation_count',            str(fibre_dict['realisation_count']))
-    #     parameters.set('FIBRE', 'photoelasticity',              str(fibre_dict['photoelasticity']))
-    #     parameters.set('FIBRE', 'modulus_model',                fibre_dict['modulus_model'])
-
-    #     span_path = Path.from_dict(fibre_dict['span_path'])
-    #     parameters.set('FIBRE', 'span_length', str(span_path.lengths[0]))
-        
-    #     if 'path' in fibre_dict:
-    #         path = Path.from_dict(fibre_dict['path'])
-    #         parameters.set('FIBRE', 'path_coordinates', json.dumps(path.coordinates.tolist()))
-    #     else:
-    #         parameters.set('FIBRE', 'span_count', str(span_path.edge_count))
-
-    #     fibre = cls(parameters)
-    #     fibre.differential_group_delays = np.array(fibre_dict['differential_group_delays'])
-        
-    #     fibre._step_path = Path.from_dict(fibre_dict['step_path'])
-    #     fibre._step_gains_dB = np.array(fibre_dict['step_gains_dB'])
-    #     fibre._span_path = span_path
-    #     if 'path' in fibre_dict:
-    #         fibre._path = path
-
-    #     return fibre
-
     @classmethod
-    @abstractmethod
-    def from_dataset(cls, dataset: xr.Dataset):
+    def load(cls, dataset: nc.Dataset, step_start: int = None, step_stop: int = None, realisation_start: int = None, realisation_stop: int = None):
         """
-        Load a Fibre from an xarray dataset
+        Load a Fibre from a netCDF4 dataset
 
         inputs:
-        - dataset [xr.Dataset]: the dataset to load the Fibre from
-
+        - dataset [nc.Dataset]: the Dataset to load the Fibre from
+        - step_start [int]: Treat step index 0 in this Fibre as index step_start in the netCDF file. This allows the partial loading of a large Fibre.
+        - step_stop [int]: Treat step index -1 in this Fibre as index step_stop - 1 in the netCDF file. This allows the partial loading of a large Fibre.
+        - realisation_start [int]: Treat realisation 0 in this Fibre as realisation realisation_start in the netCDF file. This allows the partial loading of a large Fibre.
+        - realisation_stop [int]: Treat realisation -1 in this Fibre as realisation realisation_stop - 1 in the netCDF file. This allows the partial loading of a large Fibre.
+        
         outputs:
         - [Fibre]: the loaded Fibre
         """
         parameters = ConfigParser()
-        for attribute, value in dataset.attrs.items():
-            parameters.set('FIBRE', attribute, str(value))
+        parameters.add_section('FIBRE')
 
-        span_path_dataset = dataset[['span_longitudes', 'span_latitudes', 'span_lengths']].copy(deep = True)
-        span_path_dataset.rename({data_variable.split('_')[1] for data_variable in span_path_dataset.data_vars})
+        for attribute_key in dataset.ncattrs():
+            parameters.set('FIBRE', attribute_key, str(dataset.getncattr(attribute_key)))
 
-        path_data_variables = [data_variable for data_variable in dataset.data_vars if data_variable.startswith('path_')]
-        if len(path_data_variables):
-            path_dataset = dataset[path_data_variables]
+        span_path = Path.load(dataset.groups['span_path'])
+        parameters.set('FIBRE', 'span_length', str(span_path.lengths[0].item()))
+
+        if 'path' in dataset.groups:
+            path = Path.load(dataset.groups['path'])
+            parameters.set('FIBRE', 'path_coordinates', json.dumps(path.coordinates.tolist()))
         else:
-            path_dataset = None
+            parameters.set('FIBRE', 'span_count', str(len(span_path.lengths)))
 
         fibre = cls(parameters)
-        fibre.differential_group_delays = dataset['differential_group_delays'].to_numpy()
-        
-        fibre._step_path = Path.from_dataset(dataset)
-        fibre._step_gains_dB = dataset['step_gains_dB'].to_numpy()
-        fibre._span_path = Path.from_dataset(span_path_dataset)
-        if path_dataset is not None:
-            fibre._path = Path.from_dataset(path_dataset)
+
+        fibre.differential_group_delays = np.array(read_variable(dataset, 'differential_group_delays', {Dimension.STEPS.name: step_start, Dimension.REALISATIONS.name: realisation_start}, {Dimension.STEPS.name: step_stop, Dimension.REALISATIONS.name: realisation_stop}))
+        fibre._step_path = Path.load(dataset.groups['step_path'])
+        fibre._step_gains_dB = np.array(read_variable(dataset, 'step_gains_dB', {Dimension.STEPS.name: step_start}, {Dimension.STEPS.name: step_stop}))
+        fibre._span_path = span_path
+        if 'path' in dataset.groups:
+            fibre._path = path
 
         return fibre
 
     def __eq__(self, other) -> bool:
-        return self._polarisation_mode_dispersion  == other._polarisation_mode_dispersion and \
-            self._photoelasticity                  == other._photoelasticity              and \
-            self._chromatic_dispersion             == other._chromatic_dispersion         and \
-            self._nonlinearity                     == other._nonlinearity                 and \
-            self._attenuation_dB                   == other._attenuation_dB               and \
-            self._noise_figure_dB                  == other._noise_figure_dB              and \
-            self._realisation_count                == other._realisation_count            and \
-            self._step_path                        == other._step_path                    and \
-            self._span_path                        == other._span_path                    and \
-            self._path                             == other._path                         and \
-            np.all(self._step_gains_dB             == other._step_gains_dB)               and \
-            np.all(self._differential_group_delays == other._differential_group_delays)   and \
-            self._modulus_model                    == other._modulus_model
+        return self._polarisation_mode_dispersion     == other._polarisation_mode_dispersion and \
+            self._photoelasticity                     == other._photoelasticity              and \
+            self._chromatic_dispersion                == other._chromatic_dispersion         and \
+            self._nonlinearity                        == other._nonlinearity                 and \
+            self._attenuation_dB                      == other._attenuation_dB               and \
+            self._noise_figure_dB                     == other._noise_figure_dB              and \
+            self._realisation_count                   == other._realisation_count            and \
+            self._step_path                           == other._step_path                    and \
+            self._span_path                           == other._span_path                    and \
+            self._path                                == other._path                         and \
+            np.allclose(self._step_gains_dB,             other._step_gains_dB)               and \
+            np.allclose(self._differential_group_delays, other._differential_group_delays)   and \
+            self._modulus_model                       == other._modulus_model
 
     @property
     def path(self) -> Path:

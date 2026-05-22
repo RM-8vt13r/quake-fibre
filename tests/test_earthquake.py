@@ -6,9 +6,9 @@ import json
 import tempfile
 
 import numpy as np
-import xarray as xr
+import netCDF4 as nc
 
-from quakefibre import EarthquakeTerrestrial, EarthquakeSubmarine, Path
+from quakefibre import EarthquakeTerrestrial, EarthquakeSubmarine, Path, Perturbation
 
 parameters = ConfigParser()
 
@@ -40,8 +40,8 @@ def test_earthquakes():
     
     earthquake_terrestrial = EarthquakeTerrestrial(parameters)
     # displacements_local_terrestrial, displacements_global, displacements_projected, strains_terrestrial = earthquake_terrestrial.request_fibre_strains(path, None, None, parameters.getint('EARTHQUAKE', 'batch_size_sparse'), parameters.getint('EARTHQUAKE', 'worker_count'), parameters.getfloat('EARTHQUAKE', 'request_delay'))
-    earthquake_path, local_seismograms_terrestrial = earthquake_terrestrial.request_local_seismograms(path, None, None, parameters.getint('EARTHQUAKE', 'batch_size_sparse'), parameters.getint('EARTHQUAKE', 'worker_count'), parameters.getfloat('EARTHQUAKE', 'request_delay'))
-    global_seismograms = earthquake_terrestrial.get_global_seismograms(local_seismograms_terrestrial, path, earthquake_path)
+    local_seismograms_terrestrial = earthquake_terrestrial.request_local_seismograms(path, None, parameters.getint('EARTHQUAKE', 'batch_size_sparse'), parameters.getint('EARTHQUAKE', 'worker_count'), parameters.getfloat('EARTHQUAKE', 'request_delay'))
+    global_seismograms = earthquake_terrestrial.get_global_seismograms(local_seismograms_terrestrial, path)
     projected_seismograms = earthquake_terrestrial.get_projected_seismograms(global_seismograms, path)
     strains_terrestrial = earthquake_terrestrial.get_fibre_strains(projected_seismograms, path)
     assert local_seismograms_terrestrial.shape[0] == path.vertex_count, f"path vertex count should match the first dimension of local_seismograms_terrestrial, but these were {path.vertex_count} and {local_seismograms_terrestrial.shape}"
@@ -54,8 +54,8 @@ def test_earthquakes():
 
     earthquake_submarine = EarthquakeSubmarine(parameters)
     # displacements_local_submarine, normal_accelerations, differential_pressures, strains_submarine = earthquake_submarine.request_fibre_strains(path, None, None, parameters.getint('EARTHQUAKE', 'batch_size_sparse'), parameters.getint('EARTHQUAKE', 'worker_count'), parameters.getfloat('EARTHQUAKE', 'request_delay'))
-    earthquake_path, local_seismograms_submarine = earthquake_submarine.request_local_seismograms(path, None, None, parameters.getint('EARTHQUAKE', 'batch_size_sparse'), parameters.getint('EARTHQUAKE', 'worker_count'), parameters.getfloat('EARTHQUAKE', 'request_delay'))
-    normal_accelerations = earthquake_submarine.get_normal_accelerations(local_seismograms_submarine, path, earthquake_path)
+    local_seismograms_submarine = earthquake_submarine.request_local_seismograms(path, None, parameters.getint('EARTHQUAKE', 'batch_size_sparse'), parameters.getint('EARTHQUAKE', 'worker_count'), parameters.getfloat('EARTHQUAKE', 'request_delay'))
+    normal_accelerations = earthquake_submarine.get_normal_accelerations(local_seismograms_submarine, path)
     differential_pressures = earthquake_submarine.get_differential_pressures(normal_accelerations, path)
     strains_submarine = earthquake_submarine.get_fibre_strains(differential_pressures)
     assert local_seismograms_submarine.shape[0] == path.edge_count, f"path edge count should match the first dimension of local_seismograms_submarine, but these were {path.edge_count} and {local_seismograms_submarine.shape}"
@@ -72,18 +72,18 @@ def test_concurrency():
     path = Path(*zip(*path_coordinates))
     earthquake = EarthquakeTerrestrial(parameters)
 
-    fibre_strains_sequential = earthquake.request_fibre_strains(path, None, None, parameters.getint('EARTHQUAKE', 'batch_size_sparse'), 1, 0)
-    fibre_strains_concurrent = earthquake.request_fibre_strains(path, None, None, 1, parameters.getint('EARTHQUAKE', 'worker_count'), parameters.getfloat('EARTHQUAKE', 'request_delay'))
+    fibre_strains_sequential = earthquake.request_fibre_strains(path, None, parameters.getint('EARTHQUAKE', 'batch_size_sparse'), 1, 0)
+    fibre_strains_concurrent = earthquake.request_fibre_strains(path, None, 1, parameters.getint('EARTHQUAKE', 'worker_count'), parameters.getfloat('EARTHQUAKE', 'request_delay'))
     
     assert np.allclose(fibre_strains_sequential.samples_time, fibre_strains_concurrent.samples_time), f"Earthquake strains must match when requested sequentially or concurrently, but didn't"
 
 def test_interpolation():
-    path = Path(*zip(*path_coordinates)).interpolated(parameters.getfloat('EARTHQUAKE', 'step_length_dense'))
+    path_sparse = Path(*zip(*path_coordinates)).interpolated(parameters.getfloat('EARTHQUAKE', 'step_length_sparse'))
+    path_dense  = Path(*zip(*path_coordinates)).interpolated(parameters.getfloat('EARTHQUAKE', 'step_length_dense'))
 
     # earthquake_terrestrial = EarthquakeTerrestrial(parameters)
     # strains_terrestrial_interpolated = earthquake_terrestrial.request_fibre_strains(
-    #         path,
-    #         parameters.getfloat('EARTHQUAKE', 'step_length_sparse'),
+    #         path_sparse,
     #         None,
     #         parameters.getint('EARTHQUAKE', 'batch_size_sparse'),
     #         parameters.getint('EARTHQUAKE', 'worker_count'),
@@ -91,8 +91,7 @@ def test_interpolation():
     #     )
 
     # strains_terrestrial_raw = earthquake_terrestrial.request_fibre_strains(
-    #         path,
-    #         None,
+    #         path_dense,
     #         None,
     #         parameters.getint('EARTHQUAKE', 'batch_size_dense'),
     #         parameters.getint('EARTHQUAKE', 'worker_count'),
@@ -108,32 +107,31 @@ def test_interpolation():
     #         ), "Synthesised and interpolated terrestrial seismogram values must match, but didn't"
     
     earthquake_submarine = EarthquakeSubmarine(parameters)
-    strains_submarine_interpolated = earthquake_submarine.request_fibre_strains(
-            path,
-            parameters.getfloat('EARTHQUAKE', 'step_length_sparse'),
+    submarine_perturbation_sparse = earthquake_submarine(
+            path_sparse,
             None,
             parameters.getint('EARTHQUAKE', 'batch_size_sparse'),
             parameters.getint('EARTHQUAKE', 'worker_count'),
             parameters.getfloat('EARTHQUAKE', 'request_delay')
-        )
+        )#.interpolated(path_sparse.centre_positions, path_dense.centre_positions)
 
-    strains_submarine_raw = earthquake_submarine.request_fibre_strains(
-            path,
-            None,
+    submarine_perturbation_dense = earthquake_submarine(
+            path_dense,
             None,
             parameters.getint('EARTHQUAKE', 'batch_size_dense'),
             parameters.getint('EARTHQUAKE', 'worker_count'),
             parameters.getfloat('EARTHQUAKE', 'request_delay')
         )
 
-    assert strains_submarine_interpolated.shape == strains_submarine_raw.shape, f"Synthesised and interpolated submarine earthquake strains must have the same shapes, but these were {strains_submarine_raw.shape} and {strains_submarine_interpolated.shape}"
-    for time_index in range(strains_submarine_raw.shape[1]):
+    # assert submarine_perturbation_sparse.shape == submarine_perturbation_dense.shape, f"Synthesised and interpolated submarine earthquake perturbations must have the same shapes, but these were {submarine_perturbation_dense.shape} and {submarine_perturbation_sparse.shape}"
+    assert submarine_perturbation_sparse.shape != submarine_perturbation_dense.shape, f"Synthesised and interpolated submarine earthquake perturbations must have different shapes, but had the same"
+    for time_index in range(submarine_perturbation_sparse.shape[1]):
         assert np.allclose(
-                np.interp(path.interpolated(parameters.getfloat('EARTHQUAKE', 'step_length_sparse')).centre_positions, path.centre_positions, strains_submarine_raw.samples_time[:, time_index, 0])[1:], # [1:] to disregard boundary conditions
-                np.interp(path.interpolated(parameters.getfloat('EARTHQUAKE', 'step_length_sparse')).centre_positions, path.centre_positions, strains_submarine_interpolated.samples_time[:, time_index, 0])[1:],
-                atol = np.max(np.abs(strains_submarine_raw.samples_time[:, time_index, 0])) / 20,
+                submarine_perturbation_sparse.strains[:, time_index],
+                np.interp(path_sparse.centre_positions, path_dense.centre_positions, submarine_perturbation_dense.strains[:, time_index]),
+                atol = np.max(np.abs(submarine_perturbation_dense.strains[:, time_index])) / 20,
                 rtol = 0.1
-            ), "Synthesised and interpolated submarine seismogram values must match, but didn't"
+            ), "Synthesised and interpolated submarine seismograms values must match, but didn't"
 
 def test_intervals():
     path = Path(*zip(*path_coordinates)).interpolated(parameters.getfloat('EARTHQUAKE', 'step_length_dense'))
@@ -141,7 +139,6 @@ def test_intervals():
 
     perturbation = earthquake(
             path,
-            None,
             1,
             parameters.getint('EARTHQUAKE', 'batch_size_dense'),
             parameters.getint('EARTHQUAKE', 'worker_count'),
@@ -157,19 +154,22 @@ def test_saving():
 
     perturbation = earthquake(
             path,
-            None,
             1,
             parameters.getint('EARTHQUAKE', 'batch_size_dense'),
             parameters.getint('EARTHQUAKE', 'worker_count'),
             parameters.getfloat('EARTHQUAKE', 'request_delay')
         )
 
-    perturbation_dataset = perturbation.to_dataset()
-
-    file = tempfile.TemporaryFile()
-    perturbation_dataset.to_netcdf(file)
-    loaded_perturbation_dataset = xr.load_dataset(file)
+    file = tempfile.NamedTemporaryFile(suffix = '.nc')
+    perturbation_dataset = nc.Dataset(file.name, 'w')
+    perturbation.save(perturbation_dataset, step_start = 2, sample_start = 1)
+    perturbation_dataset_loaded = nc.Dataset(file.name, 'r')
+    perturbation_loaded = Perturbation.load(perturbation_dataset_loaded, step_start = 2, sample_start = 1)
+    perturbation_loaded_partial = Perturbation.load(perturbation_dataset_loaded, step_start = 1, sample_start = 0, step_stop = 14, sample_stop = 3)
     file.close()
 
-    assert perturbation == Perturbation.from_dataset(perturbation_dataset), f"Perturbation changed after conversion to- and from a Dataset"
-    assert perturbation == Perturbation.from_dataset(loaded_perturbation_dataset), f"Perturbation changed after conversion from a saved Dataset file"
+    assert perturbation == perturbation_loaded, f"Perturbation changed after conversion to- and from a Dataset"
+    assert perturbation.xp.allclose(
+        perturbation.strains[:14 - 2, :3 - 1], # loaded step_stop - saved step_start
+        perturbation_loaded_partial.strains[2 - 1:, 1 - 0:] # saved step_start - loaded step_start
+    ), f"Partial Perturbation changed after conversion to- and from a Dataset"

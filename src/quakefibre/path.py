@@ -1,9 +1,14 @@
 """
 A class representing a path over the earth's surface
 """
+from typing import override
+
 import numpy as np
 import obspy as op
-import xarray as xr
+import netCDF4 as nc
+
+from .constants import Dimension
+from .dataset import create_dimensions, create_variables, read_variable, write_variable
 
 class Path:
     def __init__(self, longitudes: np.ndarray = None, latitudes: np.ndarray = None, lengths: np.ndarray = None):
@@ -13,9 +18,12 @@ class Path:
         Inputs:
         - [np.ndarray] longitudes: list of coordinate longitudes in degrees, shape [C,]; if None, lengths must be set
         - [np.ndarray] latitudes: list of coordinate latitudes in degrees, shape [C,]; if None, lengths must be set
-        - [np.ndarray] lengths: list of edge lengths in km, shape [C-1,]; if lengths is specified (not None), longitudes and latitudes will be ignored, and coordinate-related Path properties will be unavailable
+        - [np.ndarray] lengths: list of edge lengths in km, shape [C-1,]; if None, longitudes and latitudes must be set
         """
         if lengths is None:
+            assert longitudes is not None and latitudes is not None, f"If lengths is None, longitudes and latitudes must be defined"
+            assert isinstance(longitudes, (np.ndarray, list, tuple)), f"longitudes must be np.ndarray, but was {type(longitudes)}"
+            assert isinstance(latitudes, (np.ndarray, list, tuple)), f"latitudes must be np.ndarray, but was {type(latitudes)}"
             longitudes = np.array(longitudes)
             latitudes = np.array(latitudes)
             assert len(longitudes.shape) == 1, f"longitudes must have shape [C,], but had shape {longitudes.shape}"
@@ -28,13 +36,19 @@ class Path:
                 for longitude1, latitude1, longitude2, latitude2 in zip(longitudes[:-1], latitudes[:-1], longitudes[1:], latitudes[1:])
             ])
 
-        else:
+        elif longitudes is None and latitudes is None:
+            assert lengths is not None, f"If longitudes and latitudes are None, lengths must be defined"
+            assert isinstance(lengths, (np.ndarray, list, tuple)), f"lengths must be np.ndarray, but was {type(lengths)}"
             lengths = np.array(lengths)
             assert len(lengths.shape) == 1, f"lengths must have shape [C,], but had shape {lengths.shape}"
+            assert np.all(lengths > 0), f"All lengths must be larger than 0"
             self._lengths = lengths.copy()
 
             self._longitudes = None
             self._latitudes = None
+
+        else:
+            raise ValueError("If lengths is not None, longitudes and latitudes must be None, but they weren't")
 
     def interpolated(self, positions: (np.ndarray, float)):
         """
@@ -66,7 +80,7 @@ class Path:
         Outputs:
         - [Path] the copied path
         """
-        if self.longitudes is None or self.latitudes is None:
+        if self.longitudes is None:
             return Path(lengths = self.lengths.copy())
 
         return Path(
@@ -93,55 +107,53 @@ class Path:
 
     #     return path_dict
 
-    def to_dataset(self) -> xr.Dataset:
+    def save(self, dataset: nc.Dataset, step_start: int = None) -> nc.Dataset:
         """
-        Convert this Path to an xarray Dataset that can be saved to a file
+        Save this Path in a file as a netCDF4 Dataset
 
-        Outputs:
-        - [xr.Dataset]: the Dataset representing this Path
+        Inputs:
+        - dataset [nc.Dataset]: Path-like or string to the file to save in.
+        - step_start [int]: Treat edge index 0 in this Path as index step_start in the netCDF file. This allows e.g. the gradual saving of a large Path, by appending multiple smaller Paths.
         """
-        return xr.Dataset(
-            data_vars = {
-                    'longitudes': xr.DataArray(self.longitudes if self._longitudes is not None else None, dims = 'vertices'),
-                    'latitudes': xr.DataArray(self.latitudes if self._latitudes is not None else None, dims = 'vertices'),
-                    'lengths': xr.DataArray(self.lengths, dims = 'edges')
-                },
-            )
+        create_dimensions(dataset, Dimension.STEPS.name)
+        create_variables(dataset, 'lengths', 'f4', Dimension.STEPS.name)
+        write_variable(dataset, 'lengths', self.lengths, {Dimension.STEPS.name: step_start})
 
-    # @classmethod
-    # def from_dict(cls, path_dict):
-    #     """
-    #     Instantiate a path from a saved dictionary.
+        if self.longitudes is not None:
+            create_dimensions(dataset, Dimension.VERTICES.name)
+            create_variables(dataset, ['longitudes', 'latitudes'], 'f8', Dimension.VERTICES.name)
+            write_variable(dataset, 'longitudes', self.longitudes, {Dimension.VERTICES.name: step_start})
+            write_variable(dataset, 'latitudes', self.latitudes, {Dimension.VERTICES.name: step_start})
 
-    #     Inputs:
-    #     - path_dict [dict]: a dictionary created using Path.to_dict()
-
-    #     Outputs:
-    #     - [Path] the loaded Path instance
-    #     """
-    #     if 'longitudes' in path_dict:
-    #         path = cls(np.array(path_dict['longitudes']), np.array(path_dict['latitudes']))
-    #         path._lengths = np.array(path_dict['lengths'])
-    #         return path
-
-    #     return Path(lengths = np.array(path_dict['lengths']))
+        dataset.sync()
 
     @classmethod
-    def from_dataset(cls, dataset: xr.Dataset):
+    def load(cls, dataset: nc.Dataset, step_start: int = None, step_stop: int = None):
         """
-        Load a Path from an xarray dataset
+        Load a Path from a netCDF4 Dataset
 
         inputs:
-        - dataset [xr.Dataset]: the dataset to load the Path from
-
+        - dataset [nc.Dataset]: the Dataset to load the Path from
+        - step_start [int]: Treat edge index 0 in this Path as index step_start in the netCDF file. This allows the partial loading of a large Path.
+        - step_stop [int]: Treat edge index -1 in this Path as index step_stop - 1 in the netCDF file. This allows the partial loading of a large Path.
+        
         outputs:
         - [Path]: the loaded Path
         """
-        return Path(
-                longitudes = dataset['longitudes'].to_numpy(),
-                latitudes = dataset['latitudes'].to_numpy(),
-                lengths = dataset['lengths'].to_numpy()
-            )
+        if 'longitudes' in dataset.variables:
+            path = Path(
+                    longitudes = np.array(read_variable(dataset, 'longitudes', {Dimension.VERTICES.name: step_start}, {Dimension.VERTICES.name: step_stop + 1 if step_stop is not None else None})),
+                    latitudes = np.array(read_variable(dataset, 'latitudes', {Dimension.VERTICES.name: step_start}, {Dimension.VERTICES.name: step_stop + 1 if step_stop is not None else None}))
+                )
+
+            assert np.allclose(path.lengths, np.array(read_variable(dataset, 'lengths', {Dimension.STEPS.name: step_start}, {Dimension.STEPS.name: step_stop}))), f"lengths of loaded Path do not match lengths saved in the dataset{f" from edge {step_start}" if step_start is not None else ""}{f" to edge {step_stop}" if step_stop is not None else ""}"
+
+        else:
+            path = Path(
+                    lengths = np.array(read_variable(dataset, 'lengths', {Dimension.STEPS.name: step_start}, {Dimension.STEPS.name: step_stop}))
+                )
+
+        return path
 
     def __iter__(self):
         """
@@ -177,7 +189,7 @@ class Path:
                 vertex_index = slice(index, index + 2, 1)
 
             else:
-                vertex_index = slice(index.start, index.stop + 2, index.step)
+                vertex_index = slice(index.start, index.stop + 1, index.step)
 
             return Path(
                     self.longitudes[vertex_index],
@@ -194,18 +206,18 @@ class Path:
 
     def __len__(self):
         """
-        Obtain the number of vertex coordinates.
+        Obtain the number of Path edges.
 
         Output:
-        - [int] the number of vertex coordinates
+        - [int] the number of Path edges
         """
-        return self.vertex_count
+        return self.edge_count
 
     def __eq__(self, other):
         return self.vertex_count == other.vertex_count and \
-            np.all(self._longitudes == other._longitudes) and \
-            np.all(self._latitudes == other._latitudes) and \
-            np.all(self.lengths == other.lengths)
+            ((self._longitudes is None and other._longitudes is None) or np.allclose(self._longitudes, other._longitudes)) and \
+            ((self._latitudes is None and other._latitudes is None) or np.allclose(self._latitudes, other._latitudes)) and \
+            np.allclose(self.lengths, other.lengths)
             
     @property
     def lengths(self):
@@ -256,8 +268,8 @@ class Path:
         """
         [np.ndarray] Path vertex longitudes in chronological order, shape [C,]
         """
-        if self._longitudes is None:
-            raise AttributeError("Path was initialised without coordinates")
+        # if self._longitudes is None:
+        #     raise AttributeError("Path was initialised without coordinates")
         return self._longitudes
 
     @longitudes.setter
@@ -269,8 +281,8 @@ class Path:
         """
         [np.ndarray] Path vertex latitudes in chronological order, shape [C,]
         """
-        if self._latitudes is None:
-            raise AttributeError("Path was initialised without coordinates")
+        # if self._latitudes is None:
+        #     raise AttributeError("Path was initialised without coordinates")
         return self._latitudes
 
     @latitudes.setter

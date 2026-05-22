@@ -35,6 +35,18 @@ Gain = Enum('Gain', [
     'AMPLITUDE'
 ])
 
+# Dataset dimensions
+Dimension = Enum('Dimension', [
+    'STEPS',
+    'VERTICES',
+    'REALISATIONS',
+    'SAMPLES',
+    'DIMENSION',
+    'CHANNELS',
+    'ROWS',
+    'COLUMNS'
+])
+
 # Pauli spin matrices
 PAULI_1 = np.array([
     [1,  0],
