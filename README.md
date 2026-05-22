@@ -41,6 +41,7 @@ To reproduce the results from [\[4\]](#4) (simulating the situation from [\[5\]]
 ```bat
 python scripts/demo_end_to_end.py --configs config/earthquake_oaxaca.ini config/fibre_curie.ini config/signal_continuous.ini config/transceiver_curie.ini --out results --make-out --alpha 1.5
 ```
+Check the other arguments in `demo_end_to_end.py` for e.g. GPU acceleration or saving/loading the perturbations to/from disk.
 
 To run unittests:  
 ```bat
