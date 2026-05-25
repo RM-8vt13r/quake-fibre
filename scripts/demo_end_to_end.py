@@ -141,21 +141,22 @@ if __name__ == '__main__':
         
         step_stop = step_start + steps_per_piece
         piece_step_path = fibre.step_path[step_start:step_stop + 1]
-        piece_earthquake_path_start = max(0, np.min(np.where(earthquake_path.positions > fibre.step_path.positions[step_start])) - 1)
-        piece_earthquake_path_stop  = min(len(earthquake_path), np.max(np.where(earthquake_path.positions < fibre.step_path.positions[step_stop])) + 1)
+        piece_earthquake_path_start = max(0, np.min(np.where(earthquake_path.centre_positions > fibre.step_path.centre_positions[step_start])) - 1)
+        piece_earthquake_path_stop  = min(len(earthquake_path), np.max(np.where(earthquake_path.centre_positions < fibre.step_path.centre_positions[step_stop])) + 1)
+        piece_earthquake_path = earthquake_path[piece_earthquake_path_start:piece_earthquake_path_stop + 1]
         
         # Obtain strain along this piece from Syngine or the saved perturbation
         perturbation = None
         if 'perturbation' in arguments:
             logger.info(f"Attempt to load fibre strains from file..")
-            with nc.Dataset(arguments.perturbation, 'r') as perturbation_dataset:
-                try:
+            try:
+                with nc.Dataset(arguments.perturbation, 'r') as perturbation_dataset:
                     perturbation = Perturbation.load(perturbation_dataset, step_start = piece_earthquake_path_start, step_stop = piece_earthquake_path_stop)
                     logger.info(f"..succeeded")
                     perturbation_loaded = True
-                except:
-                    logger.info(f"..failed")
-                    perturbation_loaded = False
+            except:
+                logger.info(f"..failed")
+                perturbation_loaded = False
         
         # if len(syngine_earthquake_piece_step_path)
         if perturbation is None:
@@ -165,7 +166,7 @@ if __name__ == '__main__':
             while perturbation is None:
                 try:
                     perturbation = earthquake(
-                            path          = earthquake_path[piece_earthquake_path_start:piece_earthquake_path_stop],
+                            path          = piece_earthquake_path,
                             duration      = parameters.getfloat('EARTHQUAKE', 'duration'),
                             batch_size    = parameters.getint('EARTHQUAKE', 'batch_size'),
                             worker_count  = parameters.getint('EARTHQUAKE', 'worker_count'),
@@ -181,6 +182,12 @@ if __name__ == '__main__':
             logger.info(f"Saving fibre strains to file")
             with nc.Dataset(arguments.perturbation, 'a') as perturbation_dataset:
                 perturbation.save(perturbation_dataset, piece_earthquake_path_start)
+
+        # Interpolate the perturbation from the sparse earthquake path to the dense fibre path
+        perturbation = perturbation.interpolated(
+                original_positions = piece_earthquake_path.centre_positions,
+                new_positions = piece_step_path.centre_positions
+            )
 
         # Propagate signal through fibre for all values of alpha
         for alpha_index, alpha in enumerate(arguments.alpha):
