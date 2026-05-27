@@ -105,9 +105,6 @@ if __name__ == '__main__':
         if write_fibre:
             with nc.Dataset(arguments.fibre, 'w') as fibre_dataset:
                 fibre.save(fibre_dataset)
-
-    else:
-        fibre = FibreCNLSE(parameters)
     
     earthquake = EarthquakeSubmarine(parameters)
     earthquake_path = fibre.path.interpolated(parameters.getfloat('EARTHQUAKE', 'step_length'))
