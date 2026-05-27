@@ -96,9 +96,22 @@ if __name__ == '__main__':
 
     transceiver = Transceiver(parameters)
     
-    if 'fibre' in arguments:
+    write_fibre = 'fibre' in arguments and ('overwrite_fibre' in arguments or not os.path.isfile(arguments.fibre))
+    if 'fibre' in arguments and not write_fibre:
         with nc.Dataset(arguments.fibre, 'r') as fibre_dataset:
             fibre = FibreCNLSE.load(fibre_dataset)
+    else:
+        fibre = FibreCNLSE(parameters)
+        if write_fibre:
+            with nc.Dataset(arguments.fibre, 'w') as fibre_dataset:
+                fibre = FibreCNLSE.save(fibre_dataset)
+
+    if 'fibre' in arguments:
+        if 'overwrite_fibre' in arguments or not os.path.isfile(arguments.fibre):
+            fibre = FibreCNLSE(parameters)
+            with nc.Dataset(arguments.fibre, 'w') as fibre_dataset:
+                fibre.save(fibre_dataset)
+
     else:
         fibre = FibreCNLSE(parameters)
     
