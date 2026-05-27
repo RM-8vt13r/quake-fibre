@@ -104,12 +104,6 @@ if __name__ == '__main__':
         fibre = FibreCNLSE(parameters)
         if write_fibre:
             with nc.Dataset(arguments.fibre, 'w') as fibre_dataset:
-                fibre = FibreCNLSE.save(fibre_dataset)
-
-    if 'fibre' in arguments:
-        if 'overwrite_fibre' in arguments or not os.path.isfile(arguments.fibre):
-            fibre = FibreCNLSE(parameters)
-            with nc.Dataset(arguments.fibre, 'w') as fibre_dataset:
                 fibre.save(fibre_dataset)
 
     else:
