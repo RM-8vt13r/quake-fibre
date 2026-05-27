@@ -518,21 +518,21 @@ class Fibre(ABC):
         Outputs:
         - [nc.Dataset]: The Dataset
         """
-        create_groups(dataset, ('span_path', 'step_path'))
-        self.span_path.save(dataset.groups['span_path'])
-        self.step_path.save(dataset.groups['step_path'])
+        # create_groups(dataset, ('span_path', 'step_path'))
+        # self.span_path.save(dataset.groups['span_path'])
+        # self.step_path.save(dataset.groups['step_path'])
         if self._path is not None:
             dataset.createGroup('path')
             self.path.save(dataset.groups['path'])
 
         create_dimensions(dataset, (Dimension.STEPS.name, Dimension.REALISATIONS.name))
-        create_variables(dataset, 'step_gains_dB', 'f4', (Dimension.STEPS.name,))
+        # create_variables(dataset, 'step_gains_dB', 'f4', (Dimension.STEPS.name,))
         create_variables(dataset, 'differential_group_delays', 'f4', (Dimension.STEPS.name, Dimension.REALISATIONS.name))
-        write_variable(dataset, 'step_gains_dB', self.step_gains_dB, {Dimension.STEPS.name: step_start})
+        # write_variable(dataset, 'step_gains_dB', self.step_gains_dB, {Dimension.STEPS.name: step_start})
         write_variable(dataset, 'differential_group_delays', self.differential_group_delays, {Dimension.STEPS.name: step_start, Dimension.REALISATIONS.name: realisation_start})
         create_attributes(dataset,
-            ('correlation_length', 'beat_length', 'steps_per_span', 'chromatic_dispersion', 'nonlinearity', 'attenuation', 'noise_figure', 'polarisation_mode_dispersion', 'realisation_count', 'photoelasticity', 'modulus_model'),
-            (self.correlation_length, self.beat_length, self.steps_per_span, self.chromatic_dispersion, self.nonlinearity, self.attenuation_dB, self.noise_figure_dB, self.polarisation_mode_dispersion, self.realisation_count, self.photoelasticity, self.modulus_model.name),
+            ('correlation_length', 'beat_length', 'steps_per_span', 'chromatic_dispersion', 'nonlinearity', 'attenuation', 'noise_figure', 'polarisation_mode_dispersion', 'realisation_count', 'photoelasticity', 'modulus_model', 'span_count', 'span_length'),
+            (self.correlation_length, self.beat_length, self.steps_per_span, self.chromatic_dispersion, self.nonlinearity, self.attenuation_dB, self.noise_figure_dB, self.polarisation_mode_dispersion, self.realisation_count, self.photoelasticity, self.modulus_model.name, self.span_path.edge_count, np.mean(self.span_path.lengths[:-1])),
             allow_attribute_overwrite
         )
         dataset.sync()
@@ -555,28 +555,28 @@ class Fibre(ABC):
         - [Fibre]: the loaded Fibre
         """
         logger.info("Loading fibre from dataset..")
-        
+
         parameters = ConfigParser()
         parameters.add_section('FIBRE')
 
         for attribute_key in dataset.ncattrs():
             parameters.set('FIBRE', attribute_key, str(dataset.getncattr(attribute_key)))
 
-        span_path = Path.load(dataset.groups['span_path'])
-        parameters.set('FIBRE', 'span_length', str(span_path.lengths[0].item()))
+        # span_path = Path.load(dataset.groups['span_path'])
+        # parameters.set('FIBRE', 'span_length', str(span_path.lengths[0].item()))
 
         if 'path' in dataset.groups:
             path = Path.load(dataset.groups['path'])
             parameters.set('FIBRE', 'path_coordinates', json.dumps(path.coordinates.tolist()))
-        else:
-            parameters.set('FIBRE', 'span_count', str(len(span_path.lengths)))
+        # else:
+        #     parameters.set('FIBRE', 'span_count', str(len(span_path.lengths)))
 
         fibre = cls(parameters)
 
         fibre.differential_group_delays = np.array(read_variable(dataset, 'differential_group_delays', {Dimension.STEPS.name: step_start, Dimension.REALISATIONS.name: realisation_start}, {Dimension.STEPS.name: step_stop, Dimension.REALISATIONS.name: realisation_stop}))
-        fibre._step_path = Path.load(dataset.groups['step_path'])
-        fibre._step_gains_dB = np.array(read_variable(dataset, 'step_gains_dB', {Dimension.STEPS.name: step_start}, {Dimension.STEPS.name: step_stop}))
-        fibre._span_path = span_path
+        # fibre._step_path = Path.load(dataset.groups['step_path'])
+        # fibre._step_gains_dB = np.array(read_variable(dataset, 'step_gains_dB', {Dimension.STEPS.name: step_start}, {Dimension.STEPS.name: step_stop}))
+        # fibre._span_path = span_path
         if 'path' in dataset.groups:
             fibre._path = path
 

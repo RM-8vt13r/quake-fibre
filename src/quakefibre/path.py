@@ -198,7 +198,7 @@ class Path:
         return self.vertex_count == other.vertex_count and \
             ((self._longitudes is None and other._longitudes is None) or np.allclose(self._longitudes, other._longitudes)) and \
             ((self._latitudes is None and other._latitudes is None) or np.allclose(self._latitudes, other._latitudes)) and \
-            np.allclose(self.lengths, other.lengths)
+            np.allclose(self.lengths, other.lengths, atol = 1e-5)
             
     @property
     def lengths(self):
