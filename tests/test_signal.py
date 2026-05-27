@@ -68,9 +68,16 @@ def test_signal():
         signal_dataset_loaded = nc.Dataset(file.name, 'r')
         signal_loaded = Signal.load(signal_dataset_loaded, step_starts = {Dimension.SAMPLES.name: 2})
         signal_loaded_partial = Signal.load(signal_dataset_loaded, step_starts = {Dimension.SAMPLES.name: 1}, step_stops = {Dimension.SAMPLES.name: 90})
+        signal_loaded_full = Signal.load(signal_dataset_loaded, step_starts = {Dimension.SAMPLES.name: 2}, step_stops = {Dimension.SAMPLES.name: 2 + signal.sample_count})
+        try:
+            signal_loaded_wrongly = Signal.load(signal_dataset_loaded, step_stops = {Dimension.SAMPLES.name: int(parameters.getfloat("SIGNAL", "symbol_count")) * transceiver.sample_factor + 1})
+            raise AssertionError(f"Loading {int(parameters.getfloat("SIGNAL", "symbol_count")) * transceiver.sample_factor + 1} samples of a {int(parameters.getfloat("SIGNAL", "symbol_count")) * transceiver.sample_factor}-sample signal dataset did not raise an error")
+        except:
+            pass
         file.close()
 
         assert signal == signal_loaded, f"Signal changed after conversion to- and from a Dataset"
+        assert signal == signal_loaded_full, f"Signal changed after conversion to- and from a Dataset, when loaded using the step_stops parameter"
         assert signal.xp.allclose(
                 signal.samples_time[*[slice(None)] * signal.sample_axis_nonnegative, :90 - 2], # loaded step_stop - saved step_start
                 signal_loaded_partial.samples_time[*[slice(None)] * signal.sample_axis_nonnegative, 2 - 1:] # saved step_start - loaded step_start

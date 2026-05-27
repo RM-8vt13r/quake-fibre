@@ -56,7 +56,7 @@ def create_variables(dataset: nc.Dataset, variables: (tuple, list), types: (tupl
         assert isinstance(variable, str), f"variables must be a list of str, but had an element of type {type(variable)}"
         assert isinstance(type_, str), f"types must be a list of str, but had an element of type {type(type_)}"
         if variable not in dataset.variables:
-            dataset.createVariable(variable, type_, dimensions)
+            dataset.createVariable(variable, type_, dimensions, fill_value = np.nan)
         else:
             assert dataset.variables[variable].dtype == np.dtype(type_), f"Tried to overwrite existing variable {variable} of type {dataset.variables[variable].dtype} with a new variable of type {np.dtype(type_)} ({type_})"
 
@@ -175,4 +175,11 @@ def read_variable(dataset: nc.Dataset, variable: str, step_starts: dict = {}, st
 
         dimension_slices.append(slice(step_start, step_stop))
 
-    return dataset.variables[variable][*dimension_slices]
+    variable = dataset.variables[variable][*dimension_slices]
+
+    for dimension_index, (dimension, dimension_slice) in enumerate(zip(dimensions, dimension_slices)):
+        if dimension_slice.start is None or dimension_slice.stop is None: continue
+        slice_length = dimension_slice.stop - dimension_slice.start
+        assert variable.shape[dimension_index] == slice_length, f"Indexing slice of dimension {dimension} exceeded dimension length"
+
+    return variable
