@@ -58,7 +58,7 @@ class EarthquakeSubmarine(Earthquake):
             assert getattr(self, field) > 0, f"{field} must be >0, but was {field}"
 
         if (EarthquakeSubmarine.RAY_PARAMETERS is None or EarthquakeSubmarine.RAY_PARAMETERS[1] - EarthquakeSubmarine.RAY_PARAMETERS[0] > ray_resolution) and self.water_compressible:
-            logger.info(f"Initialising ray parameters table with resolution {ray_resolution} degrees..")
+            logger.info(f"Initialising ray parameters table with resolution {ray_resolution} degrees")
 
             EarthquakeSubmarine.RAY_ANGLES = np.append(np.arange(0, 180, ray_resolution), 180)
             

@@ -140,7 +140,7 @@ class Signal:
             case Device.CUDA:
                 # assert 'cupy' in sys.modules, f"Cannot move signal onto GPU without CUDA-enabled installation (see installation instructions)"
                 if 'cupy' not in sys.modules:
-                    logger.warning("Cannot move signal onto GPU without CUDA-enabled installation (see installation instructions). Keeping signal in CPU memory..")
+                    logger.warning("Cannot move signal onto GPU without CUDA-enabled installation (see installation instructions) -> keeping signal in CPU memory")
                     return
                     
                 self._device = device

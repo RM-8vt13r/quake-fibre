@@ -57,7 +57,7 @@ class Fibre(ABC):
         - photoelasticity [float]:              Fibre photoelasticity.
         - modulus_model [str]:                  Method (FIXED or RANDOM) to generate polarisation mode dispersion realisations.
         """
-        logger.info("Creating fibre..")
+        logger.info("Creating fibre")
 
         assert 'FIBRE'                        in parameters, f"Parameters are missing section 'FIBRE'."
         for field in (
@@ -126,7 +126,7 @@ class Fibre(ABC):
         """
         Initialise fibre- and step path information.
         """
-        logger.info("Generating fibre path..")
+        logger.info("Generating fibre path")
         if self._path is not None:
             self._span_path = self.path.interpolated(self._span_length)
 
@@ -165,7 +165,7 @@ class Fibre(ABC):
         Generate differential phase shifts, group delays, and major axes orientations or scramblers.
         """
         if self.polarisation_mode_dispersion != 0.:
-            logger.info("Generating fibre birefringence realisations..")
+            logger.info("Generating fibre birefringence realisations")
             match self.modulus_model:
                 case ModulusModel.FIXED:  self._init_birefringence_fixed()
                 case ModulusModel.RANDOM: self._init_birefringence_random()
@@ -554,7 +554,7 @@ class Fibre(ABC):
         outputs:
         - [Fibre]: the loaded Fibre
         """
-        logger.info("Loading fibre from dataset..")
+        logger.info("Loading fibre from dataset")
 
         parameters = ConfigParser()
         parameters.add_section('FIBRE')

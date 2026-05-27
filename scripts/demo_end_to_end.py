@@ -28,7 +28,7 @@ logger = logging.getLogger()
 
 if __name__ == '__main__':
     # Load command line flags
-    logger.info("Reading parameters..")
+    logger.info("Reading parameters")
 
     parser = argparse.ArgumentParser("Transmit a continuous-wave signal through an optical fibre during an earthquake. Save the input- and output signals in Jones space.")
     parser.add_argument("--configs", help = "Paths from the current working directory to all configuration files to load, detailing information on the fibre, earthquake, and signal to transmit. The configuration file(s together) must contain sections FIBRE, EARTHQUAKE, TRANSCEIVER and SIGNAL.", type = str, nargs = '+', required = True)
