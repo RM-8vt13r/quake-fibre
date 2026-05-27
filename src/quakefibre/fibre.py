@@ -554,6 +554,8 @@ class Fibre(ABC):
         outputs:
         - [Fibre]: the loaded Fibre
         """
+        logger.info("Loading fibre from dataset..")
+        
         parameters = ConfigParser()
         parameters.add_section('FIBRE')
 

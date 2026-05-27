@@ -36,8 +36,11 @@ if __name__ == '__main__':
     parser.add_argument("--out", help = "Directory path from the current working directory where to save all results.", type = str, required = True)
     parser.add_argument("--make-out", help = "If --out doesn't exist, and the --make-out flag is passed, create a new directory at --out.", action = argparse.BooleanOptionalAction)
     parser.add_argument("--perturbation", help = "File path from the current working directory where to save/load earthquake strains obtained from Syngine. If not defined, don't save or load earthquake strains from disk.", type = str, required = False)
-    parser.add_argument("--make-perturbation", help = "If the directory to --perturbation doesn't exist, and the --make-perturbation flag is passed, create a new directory to --perturbation.", type = bool, action = argparse.BooleanOptionalAction)
+    parser.add_argument("--make-perturbation", help = "If the directory to --perturbation doesn't exist, and the --make-perturbation flag is passed, create a new directory to --perturbation if necessary.", type = bool, action = argparse.BooleanOptionalAction)
     parser.add_argument("--overwrite-perturbation", help = "If --perturbation exists, delete it and rebuild it from scratch.", type = bool, action = argparse.BooleanOptionalAction)
+    parser.add_argument("--fibre", help = "File path from the current working directory where to save/load fibre realisations. If not defined, don't save or load fibre realisations from disk.", type = str, required = False)
+    parser.add_argument("--make-fibre", help = "If the directory to --fibre doesn't exist, and the --make-fibre flag is passed, create a new directory to --fibre if necessary.", type = bool, action = argparse.BooleanOptionalAction)
+    parser.add_argument("--overwrite-fibre", help = "If --fibre exists, delete it and rebuild it from scratch.", type = bool, action = argparse.BooleanOptionalAction)
     parser.add_argument("--alpha", help = "Extra parameter with which to scale the fibre strain.", type = float, nargs = '+', default = [1,])
     arguments = parser.parse_args()
 
@@ -62,26 +65,27 @@ if __name__ == '__main__':
 
     assert os.path.isdir(arguments.out), f"Output path \"{arguments.out}\" doesn't exist or is not a directory"
 
-    if 'perturbation' in arguments:
-        perturbation_directory, _ = os.path.split(arguments.perturbation)
-        
-        if len(perturbation_directory) == 0:
-            perturbation_directory = '.'
-        
-        if not os.path.exists(perturbation_directory) and arguments.make_perturbation:
-            logger.info(f"Perturbation directory \"{perturbation_directory}\" doesn't exist. Creating new directory..")
-            os.makedirs(perturbation_directory)
+    for flag in 'fibre', 'perturbation':
+        if flag in arguments:
+            flag_directory, _ = os.path.split(arguments[flag])
+            
+            if len(flag_directory) == 0:
+                flag_directory = '.'
+            
+            if not os.path.exists(flag_directory) and arguments[f'make_{flag}']:
+                logger.info(f"{flag.capitalize()} directory \"{flag_directory}\" doesn't exist. Creating new directory..")
+                os.makedirs(flag_directory)
 
-        if os.path.exists(arguments.perturbation) and arguments.overwrite_perturbation:
-            os.remove(arguments.perturbation)
+            if os.path.exists(arguments[flag]) and arguments[f'overwrite_{flag}']:
+                os.remove(arguments[flag])
 
-        assert os.path.isdir(perturbation_directory), f"Perturbation directory \"{perturbation_directory}\" doesn't exist or is not a directory"
+            assert os.path.isdir(flag_directory), f"{flag.capitalize()} directory \"{flag_directory}\" doesn't exist or is not a directory"
 
-    else:
-        if 'make_perturbation' in arguments:
-            logger.warning("Flag --make-perturbation was passed, but doesn't do anything as --perturbation wasn't passed")
-        if 'overwrite_perturbation' in arguments:
-            logger.warning("Flag --overwrite-perturbation was passed, but doesn't do anything as --perturbation wasn't passed")
+        else:
+            if f'make_{flag}' in arguments:
+                logger.warning(f"Flag --make-{flag} was passed, but doesn't do anything as --{flag} wasn't passed")
+            if f'overwrite_{flag}' in arguments:
+                logger.warning(f"Flag --overwrite-{flag} was passed, but doesn't do anything as --{flag} wasn't passed")
 
     # Load system parameters
     parameters = ConfigParser(inline_comment_prefixes = '#')
@@ -92,7 +96,11 @@ if __name__ == '__main__':
 
     transceiver = Transceiver(parameters)
     
-    fibre = FibreCNLSE(parameters)
+    if 'fibre' in arguments:
+        with nc.Dataset(arguments.fibre, 'r') as fibre_dataset:
+            fibre = FibreCNLSE.load(fibre_dataset)
+    else:
+        fibre = FibreCNLSE(parameters)
     
     earthquake = EarthquakeSubmarine(parameters)
     earthquake_path = fibre.path.interpolated(parameters.getfloat('EARTHQUAKE', 'step_length'))
@@ -140,10 +148,10 @@ if __name__ == '__main__':
         logger.info(f"Evaluating fibre piece {piece_index + 1} of {len(step_starts)}")
         
         step_stop = step_start + steps_per_piece
-        piece_step_path = fibre.step_path[step_start:step_stop + 1]
+        piece_step_path = fibre.step_path[step_start:step_stop]
         piece_earthquake_path_start = max(0, np.min(np.where(earthquake_path.centre_positions > fibre.step_path.centre_positions[step_start])) - 1)
         piece_earthquake_path_stop  = min(len(earthquake_path), np.max(np.where(earthquake_path.centre_positions < fibre.step_path.centre_positions[step_stop])) + 1)
-        piece_earthquake_path = earthquake_path[piece_earthquake_path_start:piece_earthquake_path_stop + 1]
+        piece_earthquake_path = earthquake_path[piece_earthquake_path_start:piece_earthquake_path_stop]
         
         # Obtain strain along this piece from Syngine or the saved perturbation
         perturbation = None
@@ -185,8 +193,8 @@ if __name__ == '__main__':
 
         # Interpolate the perturbation from the sparse earthquake path to the dense fibre path
         perturbation = perturbation.interpolated(
-                original_positions = piece_earthquake_path.centre_positions,
-                new_positions = piece_step_path.centre_positions
+                original_positions = earthquake_path.centre_positions[piece_earthquake_path_start] + piece_earthquake_path.centre_positions,
+                new_positions = fibre.step_path.centre_positions[step_start] + piece_step_path.centre_positions
             )
 
         # Propagate signal through fibre for all values of alpha
