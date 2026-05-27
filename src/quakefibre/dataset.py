@@ -29,7 +29,7 @@ def create_dimensions(dataset: nc.Dataset, dimensions: (tuple, list), sizes: (tu
         if dimension not in dataset.dimensions:
             dataset.createDimension(dimension, size)
         else:
-            assert dataset.dimensions[dimension].size == size or (dataset.dimension[dimension].isunlimited() and size is None), f"Tried to overwrite an existing {'un' if dataset.dimensions[dimension].isunlimited() else ''}limited dimension {dimension} of size {dataset.dimensions[dimension].size} with {'un' if size is None else ''}limited dimension{" of size " + str(size) if size is not None else ''}"
+            assert dataset.dimensions[dimension].size == size or (dataset.dimensions[dimension].isunlimited() and size is None), f"Tried to overwrite an existing {'un' if dataset.dimensions[dimension].isunlimited() else ''}limited dimension {dimension} of size {dataset.dimensions[dimension].size} with {'un' if size is None else ''}limited dimension{" of size " + str(size) if size is not None else ''}"
     
     return dataset
 
