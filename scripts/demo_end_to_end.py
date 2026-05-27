@@ -34,14 +34,14 @@ if __name__ == '__main__':
     parser.add_argument("--configs", help = "Paths from the current working directory to all configuration files to load, detailing information on the fibre, earthquake, and signal to transmit. The configuration file(s together) must contain sections FIBRE, EARTHQUAKE, TRANSCEIVER and SIGNAL.", type = str, nargs = '+', required = True)
     parser.add_argument("--GPU", help = "Index of the CUDA-enabled GPU to use. Leave out to run on CPU.", type = int, required = False)
     parser.add_argument("--out", help = "Directory path from the current working directory where to save all results.", type = str, required = True)
-    parser.add_argument("--make-out", help = "If --out doesn't exist, and the --make-out flag is passed, create a new directory at --out.", action = argparse.BooleanOptionalAction)
+    parser.add_argument("--make-out", help = "If --out doesn't exist, and the --make-out flag is passed, create a new directory at --out.", action = argparse.BooleanOptionalAction, required = False)
     parser.add_argument("--perturbation", help = "File path from the current working directory where to save/load earthquake strains obtained from Syngine. If not defined, don't save or load earthquake strains from disk.", type = str, required = False)
-    parser.add_argument("--make-perturbation", help = "If the directory to --perturbation doesn't exist, and the --make-perturbation flag is passed, create a new directory to --perturbation if necessary.", type = bool, action = argparse.BooleanOptionalAction)
-    parser.add_argument("--overwrite-perturbation", help = "If --perturbation exists, delete it and rebuild it from scratch.", type = bool, action = argparse.BooleanOptionalAction)
+    parser.add_argument("--make-perturbation", help = "If the directory to --perturbation doesn't exist, and the --make-perturbation flag is passed, create a new directory to --perturbation if necessary.", type = bool, action = argparse.BooleanOptionalAction, required = False)
+    parser.add_argument("--overwrite-perturbation", help = "If --perturbation exists, delete it and rebuild it from scratch.", type = bool, action = argparse.BooleanOptionalAction, required = False)
     parser.add_argument("--fibre", help = "File path from the current working directory where to save/load fibre realisations. If not defined, don't save or load fibre realisations from disk.", type = str, required = False)
-    parser.add_argument("--make-fibre", help = "If the directory to --fibre doesn't exist, and the --make-fibre flag is passed, create a new directory to --fibre if necessary.", type = bool, action = argparse.BooleanOptionalAction)
-    parser.add_argument("--overwrite-fibre", help = "If --fibre exists, delete it and rebuild it from scratch.", type = bool, action = argparse.BooleanOptionalAction)
-    parser.add_argument("--alpha", help = "Extra parameter with which to scale the fibre strain.", type = float, nargs = '+', default = [1,])
+    parser.add_argument("--make-fibre", help = "If the directory to --fibre doesn't exist, and the --make-fibre flag is passed, create a new directory to --fibre if necessary.", type = bool, action = argparse.BooleanOptionalAction, required = False)
+    parser.add_argument("--overwrite-fibre", help = "If --fibre exists, delete it and rebuild it from scratch.", type = bool, action = argparse.BooleanOptionalAction, required = False)
+    parser.add_argument("--alpha", help = "Extra parameter with which to scale the fibre strain.", type = float, nargs = '+', default = [1,], required = True)
     arguments = parser.parse_args()
 
     # Verify validity of passed flags
@@ -66,7 +66,7 @@ if __name__ == '__main__':
     assert os.path.isdir(arguments.out), f"Output path \"{arguments.out}\" doesn't exist or is not a directory"
 
     for flag in 'fibre', 'perturbation':
-        if flag in arguments:
+        if getattr(arguments, flag) is not None:
             flag_directory, _ = os.path.split(getattr(arguments, flag))
             
             if len(flag_directory) == 0:
@@ -82,9 +82,9 @@ if __name__ == '__main__':
             assert os.path.isdir(flag_directory), f"{flag.capitalize()} directory \"{flag_directory}\" doesn't exist or is not a directory"
 
         else:
-            if f'make_{flag}' in arguments:
+            if getattr(arguments, f'make_{flag}'):
                 logger.warning(f"Flag --make-{flag} was passed, but doesn't do anything as --{flag} wasn't passed")
-            if f'overwrite_{flag}' in arguments:
+            if getattr(arguments, f'overwrite_{flag}'):
                 logger.warning(f"Flag --overwrite-{flag} was passed, but doesn't do anything as --{flag} wasn't passed")
 
     # Load system parameters
