@@ -67,17 +67,17 @@ if __name__ == '__main__':
 
     for flag in 'fibre', 'perturbation':
         if flag in arguments:
-            flag_directory, _ = os.path.split(arguments[flag])
+            flag_directory, _ = os.path.split(getattr(arguments, flag))
             
             if len(flag_directory) == 0:
                 flag_directory = '.'
             
-            if not os.path.exists(flag_directory) and arguments[f'make_{flag}']:
+            if not os.path.exists(flag_directory) and getattr(arguments, f'make_{flag}'):
                 logger.info(f"{flag.capitalize()} directory \"{flag_directory}\" doesn't exist. Creating new directory..")
                 os.makedirs(flag_directory)
 
-            if os.path.exists(arguments[flag]) and arguments[f'overwrite_{flag}']:
-                os.remove(arguments[flag])
+            if os.path.exists(getattr(arguments, flag)) and getattr(arguments, f'overwrite_{flag}'):
+                os.remove(getattr(arguments, flag))
 
             assert os.path.isdir(flag_directory), f"{flag.capitalize()} directory \"{flag_directory}\" doesn't exist or is not a directory"
 
