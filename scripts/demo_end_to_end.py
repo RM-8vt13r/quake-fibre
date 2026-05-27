@@ -60,7 +60,7 @@ if __name__ == '__main__':
         cp.cuda.Device(arguments.GPU).use()
 
     if not os.path.exists(arguments.out) and arguments.make_out:
-        logger.info(f"Output path \"{arguments.out}\" doesn't exist. Creating new directory..")
+        logger.info(f"Output path \"{arguments.out}\" doesn't exist, creating new directory")
         os.makedirs(arguments.out)
 
     assert os.path.isdir(arguments.out), f"Output path \"{arguments.out}\" doesn't exist or is not a directory"
@@ -73,7 +73,7 @@ if __name__ == '__main__':
                 flag_directory = '.'
             
             if not os.path.exists(flag_directory) and getattr(arguments, f'make_{flag}'):
-                logger.info(f"{flag.capitalize()} directory \"{flag_directory}\" doesn't exist. Creating new directory..")
+                logger.info(f"{flag.capitalize()} directory \"{flag_directory}\" doesn't exist, creating new directory")
                 os.makedirs(flag_directory)
 
             if os.path.exists(getattr(arguments, flag)) and getattr(arguments, f'overwrite_{flag}'):
@@ -92,7 +92,7 @@ if __name__ == '__main__':
     parameters.read(arguments.configs)
 
     # Create system
-    logger.info("Initialising simulation..")
+    logger.info("Initialising simulation")
 
     transceiver = Transceiver(parameters)
     
@@ -103,6 +103,7 @@ if __name__ == '__main__':
     else:
         fibre = FibreCNLSE(parameters)
         if write_fibre:
+            logger.info("Saving fibre")
             with nc.Dataset(arguments.fibre, 'w') as fibre_dataset:
                 fibre.save(fibre_dataset)
     
@@ -120,7 +121,7 @@ if __name__ == '__main__':
     pressure_filter = Filter(filter_frequencies, filter_responses)
 
     # Transmit a continuous-wave signal
-    logger.info("Transmitting signal..")
+    logger.info("Transmitting signal")
     signal = transceiver.transmit_continuous(
             symbol = [1, 0],
             symbol_count = parameters.getint('SIGNAL', 'symbol_count'),
