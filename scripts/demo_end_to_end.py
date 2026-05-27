@@ -49,7 +49,7 @@ if __name__ == '__main__':
         assert config.endswith('.ini'), f"Config path must end with .ini, but was \"{config}\""
         assert os.path.isfile(config), f"Config \"{config}\" doesn't exist or is not a file"
 
-    if 'GPU' in arguments:
+    if arguments.GPU is not None:
         try:
             assert 'cupy' in sys.modules
             a = cp.array([1, 2, 3])
@@ -96,8 +96,8 @@ if __name__ == '__main__':
 
     transceiver = Transceiver(parameters)
     
-    write_fibre = 'fibre' in arguments and ('overwrite_fibre' in arguments or not os.path.isfile(arguments.fibre))
-    if 'fibre' in arguments and not write_fibre:
+    write_fibre = arguments.fibre is not None and (arguments.overwrite_fibre or not os.path.isfile(arguments.fibre))
+    if arguments.fibre is not None and not write_fibre:
         with nc.Dataset(arguments.fibre, 'r') as fibre_dataset:
             fibre = FibreCNLSE.load(fibre_dataset)
     else:
@@ -142,7 +142,7 @@ if __name__ == '__main__':
     propagated_signals = []
     for _ in arguments.alpha:
         propagated_signals.append(signal.copy())
-        if 'GPU' in arguments: propagated_signals[-1].to_device(Device.CUDA)
+        if arguments.GPU is not None: propagated_signals[-1].to_device(Device.CUDA)
 
     # Consider one piece of the fibre at a time, to limit memory usage
     steps_per_piece = parameters.getint('FIBRE', 'steps_per_piece')
@@ -160,7 +160,7 @@ if __name__ == '__main__':
         
         # Obtain strain along this piece from Syngine or the saved perturbation
         perturbation = None
-        if 'perturbation' in arguments:
+        if arguments.perturbation is not None:
             logger.info(f"Attempt to load fibre strains from file..")
             try:
                 with nc.Dataset(arguments.perturbation, 'r') as perturbation_dataset:
@@ -191,7 +191,7 @@ if __name__ == '__main__':
                     time.sleep(timeout)
                     timeout = max(2 * timeout, max_timeout) # Exponential backoff
 
-        if 'perturbation' in arguments and not perturbation_loaded:
+        if arguments.perturbation is not None and not perturbation_loaded:
             logger.info(f"Saving fibre strains to file")
             with nc.Dataset(arguments.perturbation, 'a') as perturbation_dataset:
                 perturbation.save(perturbation_dataset, piece_earthquake_path_start)
@@ -229,6 +229,6 @@ if __name__ == '__main__':
     # Save received signal
     logger.info(f"Saving results")
     for propagated_signal, alpha in zip(propagated_signals, arguments.alpha):
-        if 'GPU' in arguments: propagated_signal.to_device(Device.CPU)
+        if arguments.GPU is not None: propagated_signal.to_device(Device.CPU)
         with nc.Dataset(os.path.join(arguments.out, f'propagated_signal_alpha={alpha}.nc'), 'w') as propagated_signal_dataset:
             propagated_signal.save(propagated_signal_dataset)
