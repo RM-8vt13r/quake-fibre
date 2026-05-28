@@ -139,7 +139,7 @@ class EarthquakeSubmarine(Earthquake):
         - [Signal] seafloor depths in m, shape [C, 1, 1].
         """
         if not isinstance(self.water_depth, str):
-            return Signal(np.full(path.lengths.shape + [1, 1], self.water_depth), 1)
+            return Signal(np.full((*path.lengths.shape, 1, 1), self.water_depth), 1)
 
         water_depths = np.full(path.lengths.shape, None, dtype = float)
         with nc.Dataset(self.water_depth, 'r') as bathymetric_map:
