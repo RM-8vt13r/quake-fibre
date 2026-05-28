@@ -165,7 +165,7 @@ class EarthquakeSubmarine(Earthquake):
         - [Signal] signal containing differential water pressure at the seafloor Pa, shape [C, T, 1].
         """
         differential_pressures = Signal(
-            samples = self.water_density * water_depths * normal_accelerations.samples_time,
+            samples = self.water_density * water_depths.samples_time * normal_accelerations.samples_time,
             sample_rate = normal_accelerations.sample_rate
         )
 
@@ -175,8 +175,8 @@ class EarthquakeSubmarine(Earthquake):
 
             constants = np.sqrt(1 - ray_parameters ** 2 * self.water_sound_velocity ** 2)[:, None, None]
             np.divide(
-                differential_pressures.samples_frequency * self.water_sound_velocity * np.tan(normal_accelerations.frequency_angular[None, :, None] * water_depths * constants / self.water_sound_velocity),
-                normal_accelerations.frequency_angular[None, :, None] * water_depths * constants,
+                differential_pressures.samples_frequency * self.water_sound_velocity * np.tan(normal_accelerations.frequency_angular[None, :, None] * water_depths.samples_time * constants / self.water_sound_velocity),
+                normal_accelerations.frequency_angular[None, :, None] * water_depths.samples_time * constants,
                 out = differential_pressures.samples_frequency,
                 where = normal_accelerations.frequency_angular[None, :, None] != 0
             )
