@@ -110,15 +110,17 @@ if __name__ == '__main__':
     earthquake = EarthquakeSubmarine(parameters)
     earthquake_path = fibre.path.interpolated(parameters.getfloat('EARTHQUAKE', 'step_length'))
     
-    filter_frequencies = []
-    filter_responses = []
-    with open(parameters.get('EARTHQUAKE', 'filter_csv_path'), newline = '') as csvfile:
-        reader = csv.reader(csvfile, delimiter = ',')
-        for row in reader:
-            filter_frequencies.append(float(row[0]))
-            filter_responses.append(float(row[1]))
+    pressure_filter = None
+    if 'filter_csv_path' in parameters.sections['EARTHQUAKE']:
+        filter_frequencies = []
+        filter_responses = []
+        with open(parameters.get('EARTHQUAKE', 'filter_csv_path'), newline = '') as csvfile:
+            reader = csv.reader(csvfile, delimiter = ',')
+            for row in reader:
+                filter_frequencies.append(float(row[0]))
+                filter_responses.append(float(row[1]))
 
-    pressure_filter = Filter(filter_frequencies, filter_responses)
+        pressure_filter = Filter(filter_frequencies, filter_responses)
 
     # Transmit a continuous-wave signal
     logger.info("Transmitting signal")
@@ -159,12 +161,15 @@ if __name__ == '__main__':
         piece_earthquake_path = earthquake_path[piece_earthquake_path_start:piece_earthquake_path_stop]
         
         # Obtain strain along this piece from Syngine or the saved perturbation
-        perturbation = None
+        water_depths = None
+        normal_accelerations = None
         if arguments.perturbation is not None:
-            logger.info(f"Attempt to load fibre strains from file..")
+            logger.info(f"Attempt to load perturbations from file..")
             try:
                 with nc.Dataset(arguments.perturbation, 'r') as perturbation_dataset:
-                    perturbation = Perturbation.load(perturbation_dataset, step_start = piece_earthquake_path_start, step_stop = piece_earthquake_path_stop)
+                    # perturbation = Perturbation.load(perturbation_dataset, step_start = piece_earthquake_path_start, step_stop = piece_earthquake_path_stop)
+                    water_depths = Signal.load(perturbation_dataset.groups['depths'])
+                    normal_accelerations = Signal.load(perturbation_dataset.groups['normal_accelerations'])
                     logger.info(f"..succeeded")
                     perturbation_loaded = True
             except:
@@ -172,29 +177,39 @@ if __name__ == '__main__':
                 perturbation_loaded = False
         
         # if len(syngine_earthquake_piece_step_path)
-        if perturbation is None:
-            logger.info(f"Requesting fibre strains from Syngine")
-            timeout = 1
-            max_timeout = 600
-            while perturbation is None:
-                try:
-                    perturbation = earthquake(
-                            path          = piece_earthquake_path,
-                            duration      = parameters.getfloat('EARTHQUAKE', 'duration'),
-                            batch_size    = parameters.getint('EARTHQUAKE', 'batch_size'),
-                            worker_count  = parameters.getint('EARTHQUAKE', 'worker_count'),
-                            request_delay = parameters.getfloat('EARTHQUAKE', 'request_delay')
-                        )
-                    perturbation = pressure_filter(perturbation)
+        logger.info(f"Obtaining fibre strains")
+        timeout = 1
+        max_timeout = 600
+        perturbation = None
+        while perturbation is None:
+            try:
+                normal_accelerations, water_depths, perturbation = earthquake(
+                        path          = piece_earthquake_path,
+                        duration      = parameters.getfloat('EARTHQUAKE', 'duration'),
+                        batch_size    = parameters.getint('EARTHQUAKE', 'batch_size'),
+                        worker_count  = parameters.getint('EARTHQUAKE', 'worker_count'),
+                        request_delay = parameters.getfloat('EARTHQUAKE', 'request_delay'),
+                        normal_accelerations = normal_accelerations,
+                        water_depths  = water_depths,
+                        return_normal_accelerations = True,
+                        return_water_depths = True
+                    )
 
-                except (ClientHTTPException, HTTPError, ConnectionError, Timeout):
-                    time.sleep(timeout)
-                    timeout = max(2 * timeout, max_timeout) # Exponential backoff
+            except (ClientHTTPException, HTTPError, ConnectionError, Timeout):
+                time.sleep(timeout)
+                timeout = max(2 * timeout, max_timeout) # Exponential backoff
+
+        if pressure_filter is not None:
+            perturbation = pressure_filter(perturbation)
 
         if arguments.perturbation is not None and not perturbation_loaded:
-            logger.info(f"Saving fibre strains to file")
+            logger.info(f"Saving perturbations to file")
             with nc.Dataset(arguments.perturbation, 'a') as perturbation_dataset:
-                perturbation.save(perturbation_dataset, piece_earthquake_path_start)
+                for group in ('normal_accelerations', 'water_depths'):
+                    if group not in perturbation_dataset.groups:
+                        perturbation_dataset.createGroup(group)
+                normal_accelerations.save(perturbation_dataset.groups['normal_accelerations'])
+                water_depths.save(perturbation_dataset.groups['water_depths'])
 
         # Interpolate the perturbation from the sparse earthquake path to the dense fibre path
         perturbation = perturbation.interpolated(

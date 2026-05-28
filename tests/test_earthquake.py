@@ -72,8 +72,8 @@ def test_concurrency():
     path = Path(*zip(*path_coordinates))
     earthquake = EarthquakeTerrestrial(parameters)
 
-    fibre_strains_sequential = earthquake.request_fibre_strains(path, None, parameters.getint('EARTHQUAKE', 'batch_size_sparse'), 1, 0)
-    fibre_strains_concurrent = earthquake.request_fibre_strains(path, None, 1, parameters.getint('EARTHQUAKE', 'worker_count'), parameters.getfloat('EARTHQUAKE', 'request_delay'))
+    fibre_strains_sequential, = earthquake.request_fibre_strains(path, None, parameters.getint('EARTHQUAKE', 'batch_size_sparse'), 1, 0)
+    fibre_strains_concurrent, = earthquake.request_fibre_strains(path, None, 1, parameters.getint('EARTHQUAKE', 'worker_count'), parameters.getfloat('EARTHQUAKE', 'request_delay'))
     
     assert np.allclose(fibre_strains_sequential.samples_time, fibre_strains_concurrent.samples_time), f"Earthquake strains must match when requested sequentially or concurrently, but didn't"
 

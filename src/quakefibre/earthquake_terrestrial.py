@@ -135,11 +135,17 @@ class EarthquakeTerrestrial(Earthquake):
 
     @override
     def request_fibre_strains(self,
-            path,
-            duration,
-            batch_size,
-            worker_count,
-            request_delay
+            path: Path,
+            duration: float,
+            batch_size: int,
+            worker_count: int,
+            request_delay: float,
+            local_seismograms: Signal = None,
+            global_seismograms: Signal = None,
+            projected_seismograms: Signal = None,
+            return_local_seismograms: bool = False,
+            return_global_seismograms: bool = False,
+            return_projected_seismograms: bool = False,
         ) -> Signal:
         """
         Interpreting longitudes and latitudes as chronological path coordinates, request the longitudinal material strain on each path section from Syngine.
@@ -150,19 +156,44 @@ class EarthquakeTerrestrial(Earthquake):
         - batch_size [int]: how many seismograms to request simultaneously; defaults to C
         - worker_count [int]: how many Syngine requests to make at most in parallel
         - request_delay [float]: minimum delay in seconds between launching two Syngine requests
-
+        - local_seismograms [Signal]: if not None, use these local seismograms instead of requesting new ones, shape [C, T, D].
+        - global_seismograms [Signal]: if not None, use these global seismograms instead of requesting new ones, shape [C, T, D].
+        - projected_seismograms [Signal]: if not None, use these projected seismograms instead of requesting new ones, shape [C, T, 1].
+        - return_local_seismograms [bool]: if True, return the obtained local seismograms in m.
+        - return_global_seismograms [bool]: if True, return the obtained global seismograms in m.
+        - return_projected_seismograms [bool]: if True, return the obtained projected seismograms in m.
+        
         Outputs:
-        - [Signal] signal containing fibre strain, shape [C, T, 1].
+        - [list] List of returned Signals in the following order:
+          1. [Signal] if return_local_seismograms is True, the obtained local seismograms in m, shape [C, T, D] where T is the time axis and D indexes longitudinal, latitudinal, and normal components in that order.
+          2. [Signal] if return_global_seismograms is True, the obtained global seismograms in m, shape [C, T, D] where D indexes x, y and z components in that order.
+          3. [Signal] if return_projected_seismograms is True, the obtained projected seismograms in m, shape [C, T, 1].
+          4. [Signal] the obtained fibre strains, shape [C, T, 1].
         """
-        local_seismograms = self.request_local_seismograms(path, duration, batch_size, worker_count, request_delay)
+        return_list = []
 
-        global_seismograms = self.get_global_seismograms(local_seismograms, path)
-        del local_seismograms
+        if local_seismograms is None:
+            local_seismograms = self.request_local_seismograms(path, duration, batch_size, worker_count, request_delay)
 
-        projected_seismograms = self.get_projected_seismograms(global_seismograms, path)
-        del global_seismograms
+        if global_seismograms is None:
+            global_seismograms = self.get_global_seismograms(local_seismograms, path)
+        if return_local_seismograms:
+            return_list.append(local_seismograms)
+        else:
+            del local_seismograms
+
+        if projected_seismograms is None:
+            projected_seismograms = self.get_projected_seismograms(global_seismograms, path)
+        if return_global_seismograms:
+            return_list.append(global_seismograms)
+        else:
+            del global_seismograms
 
         fibre_strains = self.get_fibre_strains(projected_seismograms, path)
-        del projected_seismograms
+        if return_projected_seismograms:
+            return_list.append(projected_seismograms)
+        else:
+            del projected_seismograms
 
-        return fibre_strains
+        return_list.append(fibre_strains)
+        return return_list
