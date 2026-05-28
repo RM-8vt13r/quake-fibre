@@ -259,7 +259,7 @@ class EarthquakeSubmarine(Earthquake):
             del local_seismograms
 
         if water_depths is None:
-            water_depths = self.get_water_depths(path)
+            water_depths = self.request_water_depths(path)
 
         if differential_pressures is None:
             differential_pressures = self.get_differential_pressures(normal_accelerations, water_depths, path)
