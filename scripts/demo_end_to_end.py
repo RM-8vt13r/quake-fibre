@@ -196,7 +196,7 @@ if __name__ == '__main__':
                     )
 
                 perturbation = Perturbation(
-                        strains = fibre_strains.samples_time,
+                        strains = fibre_strains.samples_time[:, :, 0],
                         sample_rate = fibre_strains.sample_rate
                     )
 
