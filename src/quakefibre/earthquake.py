@@ -5,6 +5,7 @@ from configparser import ConfigParser
 import logging
 from abc import ABC, abstractmethod
 from typing import override
+import datetime
 
 import numpy as np
 import obspy as op
@@ -55,9 +56,17 @@ class Earthquake(PerturbationEvent, ABC):
             if catalog == 'GCMT':
                 client = op.clients.fdsn.client.Client()
                 if not identifier[0].isnumeric(): identifier = identifier[1:]
+                starttime = datetime.datetime(
+                        year = int(identifier[:4]),
+                        month = int(identifier[4:6]),
+                        day = int(identifier[6:8]),
+                        hour = int(identifier[8:10]),
+                        minute = int(identifier[10:12])
+                    )
+                endtime = starttime + datetime.timedelta(minutes = 5)
                 event  = client.get_events(
-                        starttime = op.UTCDateTime(f'{identifier[:8]}T{identifier[8:12]}00'),
-                        endtime   = op.UTCDateTime(f'{identifier[:8]}T{int(identifier[8:12]) + 5:04d}00'),
+                        starttime = op.UTCDateTime(starttime),
+                        endtime   = op.UTCDateTime(endtime),
                         catalog   = catalog
                     )[0]
 
