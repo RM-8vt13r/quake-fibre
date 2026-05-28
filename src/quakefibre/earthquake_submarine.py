@@ -56,10 +56,10 @@ class EarthquakeSubmarine(Earthquake):
 
         for field in (
                 '_water_sound_velocity',
-                '_water_density',
-                '_water_depth'
+                '_water_density'
             ):
             assert getattr(self, field) > 0, f"{field} must be >0, but was {field}"
+        assert isinstance(self.water_depth, str) or self.water_depth > 0, f"water_depth must be >0, but was {self.water_depth}"
 
         if (EarthquakeSubmarine.RAY_PARAMETERS is None or EarthquakeSubmarine.RAY_PARAMETERS[1] - EarthquakeSubmarine.RAY_PARAMETERS[0] > ray_resolution) and self.water_compressible:
             logger.info(f"Initialising ray parameters table with resolution {ray_resolution} degrees")
