@@ -35,6 +35,8 @@ parameters['EARTHQUAKE'] = {
     'ray_resolution': '0.5'         # Step size in degrees to generate a ray parameter lookup table
 }
 
+bathymetry_url = 'http://dap.ceda.ac.uk/thredds/dodsC/bodc/gebco/global/gebco_2026/sub_ice_topography_bathymetry/netcdf/GEBCO_2026_sub_ice.nc'
+
 def test_earthquakes():
     path = Path(*zip(*path_coordinates))
     
@@ -56,7 +58,8 @@ def test_earthquakes():
     # displacements_local_submarine, normal_accelerations, differential_pressures, strains_submarine = earthquake_submarine.request_fibre_strains(path, None, None, parameters.getint('EARTHQUAKE', 'batch_size_sparse'), parameters.getint('EARTHQUAKE', 'worker_count'), parameters.getfloat('EARTHQUAKE', 'request_delay'))
     local_seismograms_submarine = earthquake_submarine.request_local_seismograms(path, None, parameters.getint('EARTHQUAKE', 'batch_size_sparse'), parameters.getint('EARTHQUAKE', 'worker_count'), parameters.getfloat('EARTHQUAKE', 'request_delay'))
     normal_accelerations = earthquake_submarine.get_normal_accelerations(local_seismograms_submarine, path)
-    differential_pressures = earthquake_submarine.get_differential_pressures(normal_accelerations, path)
+    water_depths = earthquake_submarine.request_water_depths(path)
+    differential_pressures = earthquake_submarine.get_differential_pressures(normal_accelerations, water_depths, path)
     strains_submarine = earthquake_submarine.get_fibre_strains(differential_pressures)
     assert local_seismograms_submarine.shape[0] == path.edge_count, f"path edge count should match the first dimension of local_seismograms_submarine, but these were {path.edge_count} and {local_seismograms_submarine.shape}"
     assert local_seismograms_submarine.shape[2] == 3, f"local_seismograms_submarine should have three channels (normal, longitude, latitude), but had {local_seismograms_submarine.shape[2]}"
@@ -68,12 +71,23 @@ def test_earthquakes():
 
     assert not np.allclose(strains_submarine.samples_time, strains_terrestrial.samples_time), f"Strains in terrestrial and submarine fibres were the same for the same earthquake, but should be different."
 
+    earthquake_submarine._water_depth = bathymetry_url
+    water_depths_bathymetric = earthquake_submarine.request_water_depths(path)
+    differential_pressures_bathymetric = earthquake_submarine.get_differential_pressures(normal_accelerations, water_depths_bathymetric, path)
+    strains_submarine_bathymetric = earthquake_submarine.get_fibre_strains(differential_pressures_bathymetric)
+    assert water_depths.shape == water_depths_bathymetric.shape, f"water_depths and water_depths_bathymetric should have the same shape, but had shapes {water_depths.shape} and {water_depths_bathymetric.shape}"
+    assert not np.allclose(water_depths.samples_time, water_depths_bathymetric.samples_time), f"water_depths and water_depths_bathymetric should have been different, but were the same"
+    assert differential_pressures.shape == differential_pressures_bathymetric.shape, f"differential_pressures and differential_pressures_bathymetric should have the same shapes, but had shapes {differential_pressures.shape} and {differential_pressures_bathymetric.shape}"
+    assert strains_submarine.shape == strains_submarine_bathymetric.shape, f"strains_submarine and strains_submarine_bathymetric should have the same shapes, but had shapes {strains_submarine.shape} and {strains_submarine_bathymetric.shape}"
+
+    assert not np.allclose(strains_submarine.samples_time, strains_submarine_bathymetric.samples_time), f"Submarine fibre strains with constant and bathymetric depths were the same for the same earthquake, but should be different."
+
 def test_concurrency():
     path = Path(*zip(*path_coordinates))
     earthquake = EarthquakeTerrestrial(parameters)
 
-    fibre_strains_sequential, = earthquake.request_fibre_strains(path, None, parameters.getint('EARTHQUAKE', 'batch_size_sparse'), 1, 0)
-    fibre_strains_concurrent, = earthquake.request_fibre_strains(path, None, 1, parameters.getint('EARTHQUAKE', 'worker_count'), parameters.getfloat('EARTHQUAKE', 'request_delay'))
+    fibre_strains_sequential = earthquake.request_fibre_strains(path, None, parameters.getint('EARTHQUAKE', 'batch_size_sparse'), 1, 0)
+    fibre_strains_concurrent = earthquake.request_fibre_strains(path, None, 1, parameters.getint('EARTHQUAKE', 'worker_count'), parameters.getfloat('EARTHQUAKE', 'request_delay'))
     
     assert np.allclose(fibre_strains_sequential.samples_time, fibre_strains_concurrent.samples_time), f"Earthquake strains must match when requested sequentially or concurrently, but didn't"
 

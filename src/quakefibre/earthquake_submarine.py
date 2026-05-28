@@ -239,12 +239,13 @@ class EarthquakeSubmarine(Earthquake):
         - return_differential_pressures [bool]: if True, return the obtained differential pressures in Pa.
 
         Outputs:
-        - [list] List of returned Signals in the following order:
+        - [list or Signal] List of returned Signals in the following order:
           1. [Signal] if return_local_seismograms is True, the obtained local seismograms in m, shape [C, T, D] where T is the time axis and D indexes longitudinal, latitudinal, and normal components in that order.
           2. [Signal] if return_normal_accelerations is True, the obtained normal accelerations in m/s2, shape [C, T, 1].
           3. [Signal] if return_water_depths is True, the obtained water depths in m, shape [C, 1, 1].
           4. [Signal] if return_differential_pressures is True, the obtained differential pressures in Pa, shape [C, T, 1].
           5. [Signal] the obtained fibre strains, shape [C, T, 1].
+          Or, if all return_* parameters are False, just a Signal with the obtained fibre strains
         """
         return_list = []
 
@@ -279,7 +280,7 @@ class EarthquakeSubmarine(Earthquake):
             del differential_pressures
 
         return_list.append(fibre_strains)
-        return return_list
+        return return_list if len(return_list) > 1 else return_list[0]
 
     @property
     def water_sound_velocity(self):

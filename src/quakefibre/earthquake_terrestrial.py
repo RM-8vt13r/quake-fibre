@@ -169,6 +169,7 @@ class EarthquakeTerrestrial(Earthquake):
           2. [Signal] if return_global_seismograms is True, the obtained global seismograms in m, shape [C, T, D] where D indexes x, y and z components in that order.
           3. [Signal] if return_projected_seismograms is True, the obtained projected seismograms in m, shape [C, T, 1].
           4. [Signal] the obtained fibre strains, shape [C, T, 1].
+          Or, if all return_* parameters are False, just a Signal with the obtained fibre strains
         """
         return_list = []
 
@@ -196,4 +197,4 @@ class EarthquakeTerrestrial(Earthquake):
             del projected_seismograms
 
         return_list.append(fibre_strains)
-        return return_list
+        return return_list if len(return_list) > 1 else return_list[0]
