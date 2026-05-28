@@ -152,10 +152,10 @@ if __name__ == '__main__':
     for piece_index, step_start in enumerate(step_starts):
         logger.info(f"Evaluating fibre piece {piece_index + 1} of {len(step_starts)}")
         
-        step_stop = step_start + steps_per_piece
+        step_stop = min(step_start + steps_per_piece, fibre.step_path.edge_count)
         piece_step_path = fibre.step_path[step_start:step_stop]
         piece_earthquake_path_start = max(0, np.min(np.where(earthquake_path.centre_positions > fibre.step_path.centre_positions[step_start])) - 1)
-        piece_earthquake_path_stop  = min(len(earthquake_path), np.max(np.where(earthquake_path.centre_positions < fibre.step_path.centre_positions[step_stop])) + 1)
+        piece_earthquake_path_stop  = min(len(earthquake_path), np.max(np.where(earthquake_path.centre_positions < fibre.step_path.centre_positions[step_stop - 1])) + 2)
         piece_earthquake_path = earthquake_path[piece_earthquake_path_start:piece_earthquake_path_stop]
         
         # Obtain strain along this piece from Syngine or the saved perturbation
