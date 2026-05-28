@@ -111,7 +111,7 @@ if __name__ == '__main__':
     earthquake_path = fibre.path.interpolated(parameters.getfloat('EARTHQUAKE', 'step_length'))
     
     pressure_filter = None
-    if 'filter_csv_path' in parameters.sections['EARTHQUAKE']:
+    if 'filter_csv_path' in parameters['EARTHQUAKE']:
         filter_frequencies = []
         filter_responses = []
         with open(parameters.get('EARTHQUAKE', 'filter_csv_path'), newline = '') as csvfile:
