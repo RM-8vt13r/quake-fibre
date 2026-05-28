@@ -183,7 +183,7 @@ if __name__ == '__main__':
         perturbation = None
         while perturbation is None:
             try:
-                normal_accelerations, water_depths, perturbation = earthquake(
+                normal_accelerations, water_depths, fibre_strains = earthquake.request_fibre_strains(
                         path          = piece_earthquake_path,
                         duration      = parameters.getfloat('EARTHQUAKE', 'duration'),
                         batch_size    = parameters.getint('EARTHQUAKE', 'batch_size'),
@@ -193,6 +193,11 @@ if __name__ == '__main__':
                         water_depths  = water_depths,
                         return_normal_accelerations = True,
                         return_water_depths = True
+                    )
+
+                perturbation = Perturbation(
+                        strains = fibre_strains.samples_time,
+                        sample_rate = fibre_strains.sample_rate
                     )
 
             except (ClientHTTPException, HTTPError, ConnectionError, Timeout):
