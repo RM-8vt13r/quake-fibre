@@ -154,6 +154,16 @@ def read_variable(dataset: nc.Dataset, variable: str, step_starts: dict = {}, st
     """
     dimensions = dataset.variables[variable].dimensions
     dimension_slices = []
+    
+    for keys, parameter_name in zip((step_starts.keys(), step_stops.keys()), ('step_starts', 'step_stops')):
+        for key in step_starts.keys():
+            if isinstance(key, str):
+                assert key in dimensions, f"{parameter_name} key {key} doesn't appear in Dataset dimensions"
+            elif isinstance(key, int):
+                assert key >= 0 and key < len(dimensions), f"{parameter_name} key index {key} out of bounds for Dataset with {len(dimensions)} dimensions"
+            else:
+                raise AssertionError(f"{parameter_name} keys must be int or str, but had a {type(key)}")
+        
     for dimension_index, dimension in enumerate(dimensions):
         if dimension in step_starts.keys() and dimension_index not in step_starts.keys():
             step_start = step_starts[dimension]

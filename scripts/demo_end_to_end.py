@@ -12,7 +12,7 @@ import logging
 import csv
 from requests import HTTPError, ConnectionError, Timeout
 
-from quakefibre import FibreCNLSE, EarthquakeSubmarine, Transceiver, Device, Perturbation, Signal, Filter
+from quakefibre import FibreCNLSE, EarthquakeSubmarine, Transceiver, Device, Perturbation, Signal, Filter, Dimension
 
 import numpy as np
 try:
@@ -168,8 +168,8 @@ if __name__ == '__main__':
             try:
                 with nc.Dataset(arguments.perturbation, 'r') as perturbation_dataset:
                     # perturbation = Perturbation.load(perturbation_dataset, step_start = piece_earthquake_path_start, step_stop = piece_earthquake_path_stop)
-                    water_depths = Signal.load(perturbation_dataset.groups['water_depths'], step_starts = {Dimension.SAMPLES: piece_earthquake_path_start}, step_stops = {Dimension.SAMPLES: piece_earthquake_path_stop})
-                    normal_accelerations = Signal.load(perturbation_dataset.groups['normal_accelerations'], step_starts = {Dimension.SAMPLES: piece_earthquake_path_start}, step_stops = {Dimension.SAMPLES: piece_earthquake_path_stop})
+                    water_depths = Signal.load(perturbation_dataset.groups['water_depths'], step_starts = {Dimension.SAMPLES.name: piece_earthquake_path_start}, step_stops = {Dimension.SAMPLES.name: piece_earthquake_path_stop})
+                    normal_accelerations = Signal.load(perturbation_dataset.groups['normal_accelerations'], step_starts = {Dimension.SAMPLES.name: piece_earthquake_path_start}, step_stops = {Dimension.SAMPLES.name: piece_earthquake_path_stop})
                     logger.info(f"..succeeded")
                     perturbation_loaded = True
             except:
@@ -213,8 +213,8 @@ if __name__ == '__main__':
                 for group in ('normal_accelerations', 'water_depths'):
                     if group not in perturbation_dataset.groups:
                         perturbation_dataset.createGroup(group)
-                normal_accelerations.save(perturbation_dataset.groups['normal_accelerations'], step_starts = {Dimension.SAMPLES: piece_earthquake_path_start})
-                water_depths.save(perturbation_dataset.groups['water_depths'], step_starts = {Dimension.SAMPLES: piece_earthquake_path_start})
+                normal_accelerations.save(perturbation_dataset.groups['normal_accelerations'], step_starts = {Dimension.SAMPLES.name: piece_earthquake_path_start})
+                water_depths.save(perturbation_dataset.groups['water_depths'], step_starts = {Dimension.SAMPLES.name: piece_earthquake_path_start})
 
         # Interpolate the perturbation from the sparse earthquake path to the dense fibre path
         perturbation = perturbation.interpolated(
