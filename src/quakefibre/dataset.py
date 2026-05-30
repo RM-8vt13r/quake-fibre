@@ -56,7 +56,7 @@ def create_variables(dataset: nc.Dataset, variables: (tuple, list), types: (tupl
         assert isinstance(variable, str), f"variables must be a list of str, but had an element of type {type(variable)}"
         assert isinstance(type_, str), f"types must be a list of str, but had an element of type {type(type_)}"
         if variable not in dataset.variables:
-            dataset.createVariable(variable, type_, dimensions, fill_value = np.nan)
+            dataset.createVariable(variable, type_, dimensions, compression = 'zlib', complevel = 9, fill_value = np.nan)
         else:
             assert dataset.variables[variable].dtype == np.dtype(type_), f"Tried to overwrite existing variable {variable} of type {dataset.variables[variable].dtype} with a new variable of type {np.dtype(type_)} ({type_})"
 
