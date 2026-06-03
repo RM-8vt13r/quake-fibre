@@ -32,12 +32,16 @@ class Earthquake(PerturbationEvent, ABC):
         """
         assert 'EARTHQUAKE' in parameters, "Parameters are missing section 'EARTHQUAKE'"
         assert 'event' in parameters['EARTHQUAKE'], "'event' is missing from parameters section 'EARTHQUAKE'."
+        assert 'catalog' in parameters['EARTHQUAKE'], "'catalog' is missing from parameters section 'EARTHQUAKE'."
+        assert 'datacentre' in parameters['EARTHQUAKE'], "'datacentre' is missing from parameters section 'EARTHQUAKE'"
         assert 'model' in parameters['EARTHQUAKE'], "'model' is missing from parameters section 'EARTHQUAKE'."
 
         logger.info("Creating earthquake")
 
         super().__init__()
 
+        self.datacentre = parameters.get('EARTHQUAKE', 'datacentre')
+        self.catalog    = parameters.get('EARTHQUAKE', 'catalog')
         self._event = parameters.get('EARTHQUAKE', 'event')
         self._model = parameters.get('EARTHQUAKE', 'model')
 
@@ -49,33 +53,26 @@ class Earthquake(PerturbationEvent, ABC):
         Retrieve event information from FDSN as part of the Earthquake construction.
         This function was only tested for the GCMT catalog so far.
         """
-        assert ':' in self.event, f"Event id must look like <catalog>:<identifier>, but was {self.event} (did not contain the ':' character)"
-        catalog, identifier = self.event.split(':')
+        # assert ':' in self.event, f"Event id must look like <catalog>:<identifier>, but was {self.event} (did not contain the ':' character)"
+        # catalog, identifier = self.event.split(':')
+        identifier = self.event
+        while not identifier[0].isnumeric():
+            identifier = identifier[1:]
 
-        try:
-            if catalog == 'GCMT':
-                client = op.clients.fdsn.client.Client()
-                if not identifier[0].isnumeric(): identifier = identifier[1:]
-                starttime = datetime.datetime(
-                        year = int(identifier[:4]),
-                        month = int(identifier[4:6]),
-                        day = int(identifier[6:8]),
-                        hour = int(identifier[8:10]),
-                        minute = int(identifier[10:12])
-                    )
-                endtime = starttime + datetime.timedelta(minutes = 5)
-                event  = client.get_events(
-                        starttime = op.UTCDateTime(starttime),
-                        endtime   = op.UTCDateTime(endtime),
-                        catalog   = catalog
-                    )[0]
-
-            else:
-                client = op.clients.fdsn.client.Client(catalog)
-                event  = client.get_events(eventid = identifier)[0]
-
-        except:
-            raise ValueError(f"Could not retrieve event with identifier {self.event} from FDSN server")
+        client = op.clients.fdsn.client.Client(self.datacentre)
+        starttime = datetime.datetime(
+                year = int(identifier[:4]),
+                month = int(identifier[4:6]),
+                day = int(identifier[6:8]),
+                hour = int(identifier[8:10]),
+                minute = int(identifier[10:12])
+            )
+        endtime = starttime + datetime.timedelta(minutes = 5)
+        event  = client.get_events(
+                starttime = op.UTCDateTime(starttime),
+                endtime   = op.UTCDateTime(endtime),
+                # catalog   = self.catalog
+            )[0]
 
         self._origin = event.origins[0]
 
@@ -126,7 +123,7 @@ class Earthquake(PerturbationEvent, ABC):
                 'longitude': coordinate[0],
                 'latitude': coordinate[1]
             } for coordinate in coordinates],
-            'eventid': self.event
+            'eventid': self.catalog + ':' + self.event
         }
 
         if duration is not None:
@@ -328,6 +325,31 @@ class Earthquake(PerturbationEvent, ABC):
     @event.setter
     def event(self, value):
         raise AttributeError("Cannot change earthquake event ID after instantiation; create a new instance instead")
+
+    @property
+    def catalog(self):
+        """
+        [str] The catalog from which to retrieve this event.
+        """
+        return self._catalog
+
+    @catalog.setter
+    def catalog(self, value):
+        assert isinstance(value, str), f"catalog must be a str, but was a {type(value)}"
+        self._catalog = value
+
+    @property
+    def datacentre(self):
+        """
+        [str] The datacentre identifier from which to fetch earthquake metadata; see https://docs.obspy.org/packages/obspy.clients.fdsn.html for a list.
+        """
+        return self._datacentre
+
+    @datacentre.setter
+    def datacentre(self, value):
+        assert isinstance(value, str), f"datacentre must be a str, but was a {type(value)}"
+        assert value.upper() in obspy.clients.fdsn.header.URL_MAPPINGS.keys(), f"datacentre '{value}' not available in obspy (see https://docs.obspy.org/packages/obspy.clients.fdsn.html for a list)"
+        self._datacentre = value
     
     @property
     def origin(self):

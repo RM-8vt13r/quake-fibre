@@ -19,7 +19,9 @@ path_coordinates = [
 ]
 
 parameters['EARTHQUAKE'] = {
-    'event': 'GCMT:C201002270634A', # A historic earthquake event, structured <catalog>:<identifier> (e.g. from https://www.globalcmt.org/)
+    'event': 'C201002270634A',      # A historic earthquake event identifier (e.g. from https://www.globalcmt.org/)
+    'catalog': 'GCMT',              # The catalog from which to retrieve this event
+    'datacentre': 'AUSPASS',        # The datacentre from which to access the earthquake metadata (see list at https://docs.obspy.org/packages/obspy.clients.fdsn.html)
     'model': 'ak135f_5s',           # Earth model for Syngine to use from https://ds.iris.edu/ds/products/syngine/#earth
     'water_density': '1035',        # Water density at the seafloor in kg / m3
     'water_sound_velocity': '1510', # Speed of sound through water at the seafloor in m / s
