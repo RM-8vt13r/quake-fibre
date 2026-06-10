@@ -171,7 +171,7 @@ class Signal:
         # 3) CUDA is not enabled -> everything is on CPU already, but may need to be converted from list to array
         return self.xp.array(array)
 
-    def save(self, dataset: nc.Dataset, step_starts: dict = {}, allow_attribute_overwrite: bool = False) -> nc.Dataset:
+    def save(self, dataset: nc.Dataset, step_starts: dict = {}, allow_attribute_overwrite: bool = False, compression: str = 'zlib', compression_level: int = 4) -> nc.Dataset:
         """
         Save this Signal in a file as a netCDF4 Dataset
 
@@ -179,6 +179,8 @@ class Signal:
         - dataset [nc.Dataset]: Dataset to save in.
         - step_starts [dict]: {dimension [int, str]: step_start [int]} pairs. For each key, treat dimension index 0 in this Signal as index step_start in the netCDF file. This allows e.g. the gradual saving of a large Signal, by appending multiple smaller Signals.
         - allow_attribute_overwrite [bool]: If False, throws an error when you attempt to overwrite an existing dataset attribute with a new value.
+        - compression [str]: Compression algorithm to use for saving. If None, save uncompressed data. See https://unidata.github.io/netcdf4-python/#efficient-compression-of-netcdf-variables
+        - compression_level [int]: How aggressively to compress. 0 = no compression. 1 = mild compression (fast, but large file). 9 = aggressive compression (slow, but small file)
 
         Outputs:
         - [nc.Dataset]: the Dataset
@@ -188,7 +190,7 @@ class Signal:
 
         dataset_dimensions = [Dimension.DIMENSION.name + str(index + 1) for index in range(self.sample_axis_nonnegative)] + [Dimension.SAMPLES.name] + [Dimension.CHANNELS.name + str(component + 1) for component in range(-1 - self.sample_axis_negative)]
         create_dimensions(dataset, dataset_dimensions)
-        create_variables(dataset, ('samples_real', 'samples_imaginary'), 'f4', dataset.dimensions)
+        create_variables(dataset, ('samples_real', 'samples_imaginary'), 'f4', dataset.dimensions, compression, compression_level)
         write_variable(dataset, 'samples_real', self.samples.real, step_starts)
         write_variable(dataset, 'samples_imaginary', self.samples.imag, step_starts)
         create_attributes(dataset, ('sample_rate', 'sample_axis', 'domain', 'carrier_wavelength'), (self.sample_rate, self.sample_axis_nonnegative, self.domain.name, self.carrier_wavelength), allow_attribute_overwrite)

@@ -126,9 +126,9 @@ class FibreCNLSE(Fibre):
         return signal
 
     @override
-    def save(self, dataset: nc.Dataset, step_start: int = None, realisation_start: int = None, allow_attribute_overwrite: bool = False) -> nc.Dataset:
-        dataset = super().save(dataset, step_start, realisation_start, allow_attribute_overwrite)
-        create_variables(dataset, ('differential_phase_shifts', 'major_angles'), 'f4', dataset.variables['differential_group_delays'].dimensions)
+    def save(self, dataset: nc.Dataset, step_start: int = None, realisation_start: int = None, allow_attribute_overwrite: bool = False, compression: str = 'zlib', compression_level: int = 4) -> nc.Dataset:
+        dataset = super().save(dataset, step_start, realisation_start, allow_attribute_overwrite, compression, compression_level)
+        create_variables(dataset, ('differential_phase_shifts', 'major_angles'), 'f4', dataset.variables['differential_group_delays'].dimensions, compression, compression_level)
         write_variable(dataset, 'differential_phase_shifts', self.differential_phase_shifts, {Dimension.STEPS.name: step_start, Dimension.REALISATIONS.name: realisation_start})
         write_variable(dataset, 'major_angles', self.major_angles, {Dimension.STEPS.name: step_start, Dimension.REALISATIONS.name: realisation_start})
         dataset.sync()

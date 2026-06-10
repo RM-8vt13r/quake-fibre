@@ -114,10 +114,10 @@ class FibreCoarseStep(Fibre):
         return signal
 
     @override
-    def save(self, dataset: nc.Dataset, step_start: int = None, realisation_start: int = None, allow_attribute_overwrite: bool = False) -> nc.Dataset:
-        dataset = super().save(dataset, step_start, realisation_start, allow_attribute_overwrite)
+    def save(self, dataset: nc.Dataset, step_start: int = None, realisation_start: int = None, allow_attribute_overwrite: bool = False, compression: str = 'zlib', compression_level: int = 4) -> nc.Dataset:
+        dataset = super().save(dataset, step_start, realisation_start, allow_attribute_overwrite, compression, compression_level)
         create_dimensions(dataset, (Dimension.ROWS.name, Dimension.COLUMNS.name), (2, 2))
-        create_variables(dataset, ('scramblers_real', 'scramblers_imaginary'), 'f4', dataset.variables['differential_group_delays'].dimensions + (Dimension.ROWS.name, Dimension.COLUMNS.name))
+        create_variables(dataset, ('scramblers_real', 'scramblers_imaginary'), 'f4', dataset.variables['differential_group_delays'].dimensions + (Dimension.ROWS.name, Dimension.COLUMNS.name), compression, compression_level)
         write_variable(dataset, 'scramblers_real', self.scramblers.real, {Dimension.STEPS.name: step_start, Dimension.REALISATIONS.name: realisation_start})
         write_variable(dataset, 'scramblers_imaginary', self.scramblers.imag, {Dimension.STEPS.name: step_start, Dimension.REALISATIONS.name: realisation_start})
         dataset.sync()

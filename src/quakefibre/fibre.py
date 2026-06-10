@@ -505,7 +505,7 @@ class Fibre(ABC):
         return sp.constants.speed_of_light / self.material.get_refractive_index(carrier_wavelength) / 1000
 
     @abstractmethod
-    def save(self, dataset: nc.Dataset, step_start: int = None, realisation_start: int = None, allow_attribute_overwrite: bool = False) -> nc.Dataset:
+    def save(self, dataset: nc.Dataset, step_start: int = None, realisation_start: int = None, allow_attribute_overwrite: bool = False, compression: str = 'zlib', compression_level: int = 4) -> nc.Dataset:
         """
         Save this Fibre (and its exact realisations) in a file as a netCDF4 Dataset
 
@@ -514,21 +514,18 @@ class Fibre(ABC):
         - step_start [int]: If defined, treat step 0 in this Fibre as step step_start in the netCDF file. This allows e.g. the gradual saving of a large Fibre, by appending multiple smaller Fibres.
         - realisation_start [int]: If defined, treat realisation 0 in this Fibre as realisation realisation_start in the netCDF file. This allows e.g. the gradual saving of a large Fibre, by appending realisations.
         - allow_attribute_overwrite [bool]: If False, throws an error when you attempt to overwrite an existing dataset attribute with a new value.
+        - compression [str]: Compression algorithm to use for saving. If None, save uncompressed data. See https://unidata.github.io/netcdf4-python/#efficient-compression-of-netcdf-variables
+        - compression_level [int]: How aggressively to compress. 0 = no compression. 1 = mild compression (fast, but large file). 9 = aggressive compression (slow, but small file)
 
         Outputs:
         - [nc.Dataset]: The Dataset
         """
-        # create_groups(dataset, ('span_path', 'step_path'))
-        # self.span_path.save(dataset.groups['span_path'])
-        # self.step_path.save(dataset.groups['step_path'])
         if self._path is not None:
             dataset.createGroup('path')
             self.path.save(dataset.groups['path'])
 
         create_dimensions(dataset, (Dimension.STEPS.name, Dimension.REALISATIONS.name))
-        # create_variables(dataset, 'step_gains_dB', 'f4', (Dimension.STEPS.name,))
-        create_variables(dataset, 'differential_group_delays', 'f4', (Dimension.STEPS.name, Dimension.REALISATIONS.name))
-        # write_variable(dataset, 'step_gains_dB', self.step_gains_dB, {Dimension.STEPS.name: step_start})
+        create_variables(dataset, 'differential_group_delays', 'f4', (Dimension.STEPS.name, Dimension.REALISATIONS.name), compression, compression_level)
         write_variable(dataset, 'differential_group_delays', self.differential_group_delays, {Dimension.STEPS.name: step_start, Dimension.REALISATIONS.name: realisation_start})
         create_attributes(dataset,
             ('correlation_length', 'beat_length', 'steps_per_span', 'chromatic_dispersion', 'nonlinearity', 'attenuation', 'noise_figure', 'polarisation_mode_dispersion', 'realisation_count', 'photoelasticity', 'modulus_model', 'span_count', 'span_length'),

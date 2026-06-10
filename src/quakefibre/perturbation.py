@@ -121,7 +121,7 @@ class Perturbation(Signal):
     def __eq__(self, other):
         return super().__eq__(other) and self.start_time == other.start_time
 
-    def save(self, dataset: nc.Dataset, step_start: int = None, sample_start: int = None, allow_attribute_overwrite: bool = False) -> nc.Dataset:
+    def save(self, dataset: nc.Dataset, step_start: int = None, sample_start: int = None, allow_attribute_overwrite: bool = False, compression: str = 'zlib', compression_level: int = 4) -> nc.Dataset:
         """
         Save this Perturbation in a file as a netCDF4 Dataset
 
@@ -130,6 +130,8 @@ class Perturbation(Signal):
         - step_start [int]: If defined, treat step 0 in this Perturbation as step step_start in the netCDF file. This allows e.g. the gradual saving of a large Perturbation, by appending multiple smaller Perturbations.
         - sample_start [int]: If defined, treat time index 0 in this Perturbation as time samples_start in the netCDF file. This allows e.g. the gradual saving of a large Perturbation, by appending multiple smaller Perturbations.
         - allow_attribute_overwrite [bool]: If False, throws an error when you attempt to overwrite an existing dataset attribute with a new value.
+        - compression [str]: Compression algorithm to use for saving. If None, save uncompressed data. See https://unidata.github.io/netcdf4-python/#efficient-compression-of-netcdf-variables
+        - compression_level [int]: How aggressively to compress. 0 = no compression. 1 = mild compression (fast, but large file). 9 = aggressive compression (slow, but small file)
 
         Outputs:
         - [nc.Dataset]: The dataset
@@ -139,10 +141,10 @@ class Perturbation(Signal):
 
         create_dimensions(dataset, (Dimension.STEPS.name, Dimension.SAMPLES.name))
         if self.strains is not None:
-            create_variables(dataset, 'strains', 'f4', (Dimension.STEPS.name, Dimension.SAMPLES.name))
+            create_variables(dataset, 'strains', 'f4', (Dimension.STEPS.name, Dimension.SAMPLES.name), compression, compression_level)
             write_variable(dataset, 'strains', self.strains, {Dimension.STEPS.name: step_start, Dimension.SAMPLES.name: sample_start})
         if self.twists is not None:
-            create_variables(dataset, 'twists', 'f4', (Dimension.STEPS.name, Dimension.SAMPLES.name))
+            create_variables(dataset, 'twists', 'f4', (Dimension.STEPS.name, Dimension.SAMPLES.name), compression, compression_level)
             write_variable(dataset, 'twists', self.twists, {Dimension.STEPS.name: step_start, Dimension.SAMPLES.name: sample_start})
         create_attributes(dataset, ('start_time', 'sample_rate', 'domain'), (self.start_time, self.sample_rate, self.domain.name), allow_attribute_overwrite)
         dataset.sync()

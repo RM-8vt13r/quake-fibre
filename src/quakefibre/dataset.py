@@ -33,7 +33,7 @@ def create_dimensions(dataset: nc.Dataset, dimensions: (tuple, list), sizes: (tu
     
     return dataset
 
-def create_variables(dataset: nc.Dataset, variables: (tuple, list), types: (tuple, list), dimensions: (tuple, list), compression = 'zlib', compression_level = 9) -> nc.Dataset:
+def create_variables(dataset: nc.Dataset, variables: (tuple, list), types: (tuple, list), dimensions: (tuple, list), compression = 'zlib', compression_level = 4) -> nc.Dataset:
     """
     Create variables in a netCDF4 Dataset, if the variables don't already exist.
     Does not throw an error if a variable exists already.
@@ -43,7 +43,7 @@ def create_variables(dataset: nc.Dataset, variables: (tuple, list), types: (tupl
     - variables [tuple, list]: list of variables (str) to add.
     - types [tuple, list]: list of types (str) corresponding to the variables. See documentaion of netCDF4 for a list of types.
     - dimensions [tuple, list]: list of dimensions. Each variable gets assigned these same dimensions.
-    - compression [str]: compression algorithm to use, or None for no compression; see netCDF4 documentation
+    - compression [str]: compression algorithm to use; see https://unidata.github.io/netcdf4-python/#efficient-compression-of-netcdf-variables
     - compression_level [int]: the level of compression from 0 (no compression, fast read/write, large file) to 9 (maximum compression, slow read/write, small file)
 
     Outputs:

@@ -42,6 +42,8 @@ if __name__ == '__main__':
     parser.add_argument("--make-fibre", help = "If the directory to --fibre doesn't exist, and the --make-fibre flag is passed, create a new directory to --fibre if necessary.", type = bool, action = argparse.BooleanOptionalAction, required = False)
     parser.add_argument("--overwrite-fibre", help = "If --fibre exists, delete it and rebuild it from scratch.", type = bool, action = argparse.BooleanOptionalAction, required = False)
     parser.add_argument("--alpha", help = "Extra parameter with which to scale the fibre strain.", type = float, nargs = '+', default = [1,], required = True)
+    parser.add_argument("--compression", help = "Compression algorithm to use when saving results, the fibre, and/or perturbations; see https://unidata.github.io/netcdf4-python/#efficient-compression-of-netcdf-variables", type = str, default = 'zlib', required = True)
+    parser.add_argument("--compression-level", help = "The level of compression from 0 (no compression, fast read/write, large file) to 9 (maximum compression, slow read/write, small file)", type = int, default = 4, required = True)
     arguments = parser.parse_args()
 
     # Verify validity of passed flags
@@ -105,7 +107,7 @@ if __name__ == '__main__':
         if write_fibre:
             logger.info("Saving fibre")
             with nc.Dataset(arguments.fibre, 'w') as fibre_dataset:
-                fibre.save(fibre_dataset)
+                fibre.save(fibre_dataset, compression = arguments.compression, compression_level = arguments.compression_level)
     
     earthquake = EarthquakeSubmarine(parameters)
     earthquake_path = fibre.path.interpolated(parameters.getfloat('EARTHQUAKE', 'step_length'))
@@ -131,8 +133,8 @@ if __name__ == '__main__':
         )
 
     # Save transmitted signal
-    signal_dataset = nc.Dataset(os.path.join(arguments.out, 'transmitted_signal.nc'), 'w')
-    signal.save(signal_dataset)
+    with nc.Dataset(os.path.join(arguments.out, 'transmitted_signal.nc'), 'w') as signal_dataset:
+        signal.save(signal_dataset, compression = arguments.compression, compression_level = arguments.compression_level)
 
     # At what times to start transmitting the signal, to 'catch' the earthquake at different moments
     transmission_start_times = np.arange(parameters.getfloat('SIGNAL', 'transmission_start'), parameters.getfloat('SIGNAL', 'transmission_stop'), parameters.getfloat('SIGNAL', 'transmission_step')) # Zhan et al. measured 20 samples / second; transmit a short signal every 1 / 20 seconds
@@ -213,8 +215,8 @@ if __name__ == '__main__':
                 for group in ('normal_accelerations', 'water_depths'):
                     if group not in perturbation_dataset.groups:
                         perturbation_dataset.createGroup(group)
-                normal_accelerations.save(perturbation_dataset.groups['normal_accelerations'], step_starts = {0: piece_earthquake_path_start})
-                water_depths.save(perturbation_dataset.groups['water_depths'], step_starts = {0: piece_earthquake_path_start})
+                normal_accelerations.save(perturbation_dataset.groups['normal_accelerations'], step_starts = {0: piece_earthquake_path_start}, compression = arguments.compression, compression_level = arguments.compression_level)
+                water_depths.save(perturbation_dataset.groups['water_depths'], step_starts = {0: piece_earthquake_path_start}, compression = arguments.compression, compression_level = arguments.compression_level)
 
         # Interpolate the perturbation from the sparse earthquake path to the dense fibre path
         perturbation = perturbation.interpolated(
@@ -251,4 +253,4 @@ if __name__ == '__main__':
     for propagated_signal, alpha in zip(propagated_signals, arguments.alpha):
         if arguments.GPU is not None: propagated_signal.to_device(Device.CPU)
         with nc.Dataset(os.path.join(arguments.out, f'propagated_signal_alpha={alpha}.nc'), 'w') as propagated_signal_dataset:
-            propagated_signal.save(propagated_signal_dataset)
+            propagated_signal.save(propagated_signal_dataset, compression = arguments.compression, compression_level = arguments.compression_level)

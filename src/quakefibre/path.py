@@ -88,21 +88,23 @@ class Path:
             self.latitudes.copy()
         )
 
-    def save(self, dataset: nc.Dataset, step_start: int = None) -> nc.Dataset:
+    def save(self, dataset: nc.Dataset, step_start: int = None, compression: str = 'zlib', compression_level: int = 4) -> nc.Dataset:
         """
         Save this Path in a file as a netCDF4 Dataset
 
         Inputs:
         - dataset [nc.Dataset]: Path-like or string to the file to save in.
         - step_start [int]: Treat edge index 0 in this Path as index step_start in the netCDF file. This allows e.g. the gradual saving of a large Path, by appending multiple smaller Paths.
+        - compression [str]: Compression algorithm to use for saving. See https://unidata.github.io/netcdf4-python/#efficient-compression-of-netcdf-variables
+        - compression_level [int]: How aggressively to compress. 0 = no compression. 1 = mild compression (fast, but large file). 9 = aggressive compression (slow, but small file)
         """
         create_dimensions(dataset, Dimension.STEPS.name)
-        create_variables(dataset, 'lengths', 'f4', Dimension.STEPS.name)
+        create_variables(dataset, 'lengths', 'f4', Dimension.STEPS.name, compression, compression_level)
         write_variable(dataset, 'lengths', self.lengths, {Dimension.STEPS.name: step_start})
 
         if self.longitudes is not None:
             create_dimensions(dataset, Dimension.VERTICES.name)
-            create_variables(dataset, ['longitudes', 'latitudes'], 'f8', Dimension.VERTICES.name)
+            create_variables(dataset, ['longitudes', 'latitudes'], 'f8', Dimension.VERTICES.name, compression, compression_level)
             write_variable(dataset, 'longitudes', self.longitudes, {Dimension.VERTICES.name: step_start})
             write_variable(dataset, 'latitudes', self.latitudes, {Dimension.VERTICES.name: step_start})
 
