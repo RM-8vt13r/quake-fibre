@@ -71,7 +71,7 @@ class EarthquakeSubmarine(Earthquake):
             EarthquakeSubmarine.RAY_PARAMETERS = []
             for angle in EarthquakeSubmarine.RAY_ANGLES:
                 travel_times = taup_model.get_travel_times(
-                        source_depth_in_km = self.origin.depth / 1000,
+                        source_depth_in_km = self.event.preferred_origin().depth / 1000,
                         distance_in_degree = angle,
                     )
                 travel_time = min(travel_times, key = lambda x: x.time)
@@ -170,7 +170,7 @@ class EarthquakeSubmarine(Earthquake):
         )
 
         if self.water_compressible:
-            distance_angles = op.geodetics.base.locations2degrees(path.centre_latitudes, path.centre_longitudes, self.origin.latitude, self.origin.longitude)
+            distance_angles = op.geodetics.base.locations2degrees(path.centre_latitudes, path.centre_longitudes, self.event.preferred_origin().latitude, self.event.preferred_origin().longitude)
             ray_parameters  = np.interp(distance_angles, EarthquakeSubmarine.RAY_ANGLES, EarthquakeSubmarine.RAY_PARAMETERS)
 
             constants = np.sqrt(1 - ray_parameters ** 2 * self.water_sound_velocity ** 2)[:, None, None]

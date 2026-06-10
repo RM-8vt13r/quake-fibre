@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "quakefibre"
-version = "2026.06.03"
+version = "2026.06.10"
 description = "Dual-polarisation transmission through an optical fibre undergoing earthquake perturbations."
 readme = {file = "README.md", content-type = "text/markdown"}
 
@@ -87,5 +87,6 @@ cuda11x-local = [
 testing = [
     "pytest",
     "tqdm",
-    "ipykernel"
+    "ipykernel",
+    "ipywidgets"
 ]

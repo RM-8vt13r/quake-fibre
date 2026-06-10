@@ -27,7 +27,9 @@ class Earthquake(PerturbationEvent, ABC):
         Initialise the earthquake
 
         Required entries in parameters['EARTHQUAKE']:
-        - event [str]: Identifier of a historic earthquake event, e.g. from https://www.globalcmt.org/ or another database. Structure is <catalog>:<identifier>. Example: 'GCMT:C201002270634A' refers to the event at https://ds.iris.edu/spud/momenttensor/987510
+        - event [str]: Identifier of a historic earthquake event from https://www.globalcmt.org/, https://earthquake.usgs.gov/earthquakes/search/ or another database. Example: 'C201002270634A' in combination with catalog 'GCMT' refers to the event at https://ds.iris.edu/spud/momenttensor/987510
+        - catalog [str]: Identifier of the catalog to find the event in; available catalogs vary per datacentre
+        - datacentre [str]: Identifier of the datacentre from which to download the event; see https://docs.obspy.org/packages/obspy.clients.fdsn.html
         - model [str]: Earth model for Syngine to use from https://ds.iris.edu/ds/products/syngine/#earth. The model dictates at what depth seismograms are synthesised (usually the ocean floor or surface)
         """
         assert 'EARTHQUAKE' in parameters, "Parameters are missing section 'EARTHQUAKE'"
@@ -45,36 +47,38 @@ class Earthquake(PerturbationEvent, ABC):
         self._event = parameters.get('EARTHQUAKE', 'event')
         self._model = parameters.get('EARTHQUAKE', 'model')
 
-        self._init_origin()
+        self._init_event()
         self._init_syngine()
 
-    def _init_origin(self):
+    def _init_event(self):
         """
         Retrieve event information from FDSN as part of the Earthquake construction.
         This function was only tested for the GCMT catalog so far.
         """
         # assert ':' in self.event, f"Event id must look like <catalog>:<identifier>, but was {self.event} (did not contain the ':' character)"
         # catalog, identifier = self.event.split(':')
-        identifier = self.event
-        while not identifier[0].isnumeric():
-            identifier = identifier[1:]
+        
+        # identifier = self.event
+        # while not identifier[0].isnumeric():
+        #     identifier = identifier[1:]
 
         client = op.clients.fdsn.client.Client(self.datacentre)
-        starttime = datetime.datetime(
-                year = int(identifier[:4]),
-                month = int(identifier[4:6]),
-                day = int(identifier[6:8]),
-                hour = int(identifier[8:10]),
-                minute = int(identifier[10:12])
-            )
-        endtime = starttime + datetime.timedelta(minutes = 5)
-        event  = client.get_events(
-                starttime = op.UTCDateTime(starttime),
-                endtime   = op.UTCDateTime(endtime),
-                # catalog   = self.catalog
-            )[0]
+        # starttime = datetime.datetime(
+        #         year = int(identifier[:4]),
+        #         month = int(identifier[4:6]),
+        #         day = int(identifier[6:8]),
+        #         hour = int(identifier[8:10]),
+        #         minute = int(identifier[10:12])
+        #     )
+        # endtime = starttime + datetime.timedelta(minutes = 5)
+        # event  = client.get_events(
+        #         starttime = op.UTCDateTime(starttime),
+        #         endtime   = op.UTCDateTime(endtime),
+        #         # catalog   = self.catalog
+        #     )[0]
+        self._event = client.get_events(eventid = self.event, catalog = self.catalog)[0]
 
-        self._origin = event.origins[0]
+        # self._origin = event.origins[0]
 
     def _init_syngine(self):
         """
@@ -117,13 +121,21 @@ class Earthquake(PerturbationEvent, ABC):
         - [op.Stream] seismograms for the requestse batch
         """
         logger.info(f"Requesting seismograms at coordinates {batch_coordinate_start + 1}-{batch_coordinate_stop} (batch {batch_index + 1} of {batch_count}).")
+
+        origin = self.event.preferred_origin()
+        tensor = self.event.preferred_focal_mechanism().moment_tensor.tensor
         kwargs = {
             'model': self.model,
             'bulk': [{
                 'longitude': coordinate[0],
                 'latitude': coordinate[1]
             } for coordinate in coordinates],
-            'eventid': self.catalog + ':' + self.event
+            # 'eventid': self.catalog + ':' + self.event
+            'sourcelatitude': origin.latitude,
+            'sourcelongitude': origin.longitude,
+            'sourcedepthinmeters': origin.depth,
+            'sourcemomenttensor': [tensor.m_rr, tensor.m_tt, tensor.m_pp, tensor.m_rt, tensor.m_rp, tensor.m_tp],
+            'origintime': origin.time
         }
 
         if duration is not None:
@@ -138,7 +150,7 @@ class Earthquake(PerturbationEvent, ABC):
                 error_string = "Sygine could not synthesise "
                 if duration is not None:
                     error_string += f"{round(duration, 1)}-second "
-                error_string += f"seismograms at coordinates {batch_coordinate_start + 1}-{batch_coordinate_stop} (batch {batch_index + 1} of {batch_count})."
+                error_string += f"seismograms at coordinates {batch_coordinate_start + 1}-{batch_coordinate_stop} (batch {batch_index + 1} of {batch_count}): " + str(e)
                 raise ClientHTTPException(error_string)
 
     def _local_seismograms_preprocess(self,
@@ -352,15 +364,15 @@ class Earthquake(PerturbationEvent, ABC):
         self._datacentre = value
     
     @property
-    def origin(self):
+    def event(self):
         """
-        [str] The earthquake origin.
+        [str] The earthquake event.
         """
-        return self._origin
+        return self._event
 
-    @origin.setter
-    def origin(self, value):
-        raise AttributeError("Cannot change earthquake origin after instantiation; create a new instance instead")
+    @event.setter
+    def event(self, value):
+        raise AttributeError("Cannot change earthquake event after instantiation; create a new instance instead")
 
     @property
     def model(self):
