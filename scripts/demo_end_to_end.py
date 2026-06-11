@@ -28,30 +28,34 @@ logger = logging.getLogger()
 
 if __name__ == '__main__':
     # Load command line flags
-    logger.info("Reading parameters")
-
-    parser = argparse.ArgumentParser("Transmit a continuous-wave signal through an optical fibre during an earthquake. Save the input- and output signals in Jones space.")
+    parser = argparse.ArgumentParser(
+        prog = 'python scripts/demo_end_to_end.py',
+        formatter_class = argparse.ArgumentDefaultsHelpFormatter,
+        description = "Transmit a continuous-wave signal through an optical fibre during an earthquake. Save the input- and output signals in Jones space. Requires the testing version of quakefibre to be installed (see README.md).",
+        argument_default = argparse.SUPPRESS
+    )
     parser.add_argument("--configs", help = "Paths from the current working directory to all configuration files to load, detailing information on the fibre, earthquake, and signal to transmit. The configuration file(s together) must contain sections FIBRE, EARTHQUAKE, TRANSCEIVER and SIGNAL.", type = str, nargs = '+', required = True)
-    parser.add_argument("--GPU", help = "Index of the CUDA-enabled GPU to use. Leave out to run on CPU.", type = int, required = False)
+    parser.add_argument("--alpha", help = "Extra parameter with which to scale the fibre strain.", type = float, nargs = '+', default = [1,], required = False)
     parser.add_argument("--out", help = "Directory path from the current working directory where to save all results.", type = str, required = True)
-    parser.add_argument("--make-out", help = "If --out doesn't exist, and the --make-out flag is passed, create a new directory at --out.", action = argparse.BooleanOptionalAction, required = False)
+    parser.add_argument("--make-out", help = "If --out doesn't exist, and the --make-out flag is passed, create a new directory at --out.", action = argparse.BooleanOptionalAction, default = False, required = False)
     parser.add_argument("--perturbation", help = "File path from the current working directory where to save/load earthquake strains obtained from Syngine. If not defined, don't save or load earthquake strains from disk.", type = str, required = False)
-    parser.add_argument("--make-perturbation", help = "If the directory to --perturbation doesn't exist, and the --make-perturbation flag is passed, create a new directory to --perturbation if necessary.", type = bool, action = argparse.BooleanOptionalAction, required = False)
-    parser.add_argument("--overwrite-perturbation", help = "If --perturbation exists, delete it and rebuild it from scratch.", type = bool, action = argparse.BooleanOptionalAction, required = False)
+    parser.add_argument("--make-perturbation", help = "If the directory to --perturbation doesn't exist, and the --make-perturbation flag is passed, create a new directory to --perturbation if necessary.", type = bool, action = argparse.BooleanOptionalAction, default = False, required = False)
+    parser.add_argument("--overwrite-perturbation", help = "If --perturbation exists, delete it and rebuild it from scratch.", type = bool, action = argparse.BooleanOptionalAction, default = False, required = False)
     parser.add_argument("--fibre", help = "File path from the current working directory where to save/load fibre realisations. If not defined, don't save or load fibre realisations from disk.", type = str, required = False)
-    parser.add_argument("--make-fibre", help = "If the directory to --fibre doesn't exist, and the --make-fibre flag is passed, create a new directory to --fibre if necessary.", type = bool, action = argparse.BooleanOptionalAction, required = False)
-    parser.add_argument("--overwrite-fibre", help = "If --fibre exists, delete it and rebuild it from scratch.", type = bool, action = argparse.BooleanOptionalAction, required = False)
-    parser.add_argument("--alpha", help = "Extra parameter with which to scale the fibre strain.", type = float, nargs = '+', default = [1,], required = True)
-    parser.add_argument("--compression", help = "Compression algorithm to use when saving results, the fibre, and/or perturbations; see https://unidata.github.io/netcdf4-python/#efficient-compression-of-netcdf-variables", type = str, default = 'zlib', required = True)
-    parser.add_argument("--compression-level", help = "The level of compression from 0 (no compression, fast read/write, large file) to 9 (maximum compression, slow read/write, small file)", type = int, default = 4, required = True)
+    parser.add_argument("--make-fibre", help = "If the directory to --fibre doesn't exist, and the --make-fibre flag is passed, create a new directory to --fibre if necessary.", type = bool, action = argparse.BooleanOptionalAction, default = False, required = False)
+    parser.add_argument("--overwrite-fibre", help = "If --fibre exists, delete it and rebuild it from scratch.", type = bool, action = argparse.BooleanOptionalAction, default = False, required = False)
+    parser.add_argument("--GPU", help = "Index of the CUDA-enabled GPU to use. Leave out to run on CPU. Requires the CUDA version of quakefibre to be installed (see README.md).", type = int, required = False)
+    parser.add_argument("--compression", help = "Compression algorithm to use when saving results, the fibre, and/or perturbations; see https://unidata.github.io/netcdf4-python/#efficient-compression-of-netcdf-variables.", type = str, default = 'zlib', required = False)
+    parser.add_argument("--compression-level", help = "The level of compression from 0 (no compression, fast read/write, large file) to 9 (maximum compression, slow read/write, small file).", type = int, default = 4, required = False)
     arguments = parser.parse_args()
 
+    logger.info("Reading parameters")
     # Verify validity of passed flags
     for config in arguments.configs:
         assert config.endswith('.ini'), f"Config path must end with .ini, but was \"{config}\""
         assert os.path.isfile(config), f"Config \"{config}\" doesn't exist or is not a file"
 
-    if arguments.GPU is not None:
+    if 'GPU' in arguments:
         try:
             assert 'cupy' in sys.modules
             a = cp.array([1, 2, 3])
@@ -68,7 +72,7 @@ if __name__ == '__main__':
     assert os.path.isdir(arguments.out), f"Output path \"{arguments.out}\" doesn't exist or is not a directory"
 
     for flag in 'fibre', 'perturbation':
-        if getattr(arguments, flag) is not None:
+        if flag in arguments:
             flag_directory, _ = os.path.split(getattr(arguments, flag))
             
             if len(flag_directory) == 0:
@@ -98,8 +102,8 @@ if __name__ == '__main__':
 
     transceiver = Transceiver(parameters)
     
-    write_fibre = arguments.fibre is not None and (arguments.overwrite_fibre or not os.path.isfile(arguments.fibre))
-    if arguments.fibre is not None and not write_fibre:
+    write_fibre = 'fibre' in arguments and (arguments.overwrite_fibre or not os.path.isfile(arguments.fibre))
+    if 'fibre' in arguments and not write_fibre:
         with nc.Dataset(arguments.fibre, 'r') as fibre_dataset:
             fibre = FibreCNLSE.load(fibre_dataset)
     else:
@@ -146,7 +150,7 @@ if __name__ == '__main__':
     propagated_signals = []
     for _ in arguments.alpha:
         propagated_signals.append(signal.copy())
-        if arguments.GPU is not None: propagated_signals[-1].to_device(Device.CUDA)
+        if 'GPU' in arguments: propagated_signals[-1].to_device(Device.CUDA)
 
     # Consider one piece of the fibre at a time, to limit memory usage
     steps_per_piece = parameters.getint('FIBRE', 'steps_per_piece')
@@ -165,7 +169,7 @@ if __name__ == '__main__':
         # Obtain strain along this piece from Syngine or the saved perturbation
         water_depths = None
         normal_accelerations = None
-        if arguments.perturbation is not None:
+        if 'perturbation' in arguments:
             logger.info(f"Attempt to load perturbations from file..")
             try:
                 with nc.Dataset(arguments.perturbation, 'r') as perturbation_dataset:
@@ -209,7 +213,7 @@ if __name__ == '__main__':
         if pressure_filter is not None:
             perturbation = pressure_filter(perturbation)
 
-        if arguments.perturbation is not None and not perturbation_loaded:
+        if 'perturbation' in arguments and not perturbation_loaded:
             logger.info(f"Saving perturbations to file")
             with nc.Dataset(arguments.perturbation, 'a') as perturbation_dataset:
                 for group in ('normal_accelerations', 'water_depths'):
@@ -251,6 +255,6 @@ if __name__ == '__main__':
     # Save received signal
     logger.info(f"Saving results")
     for propagated_signal, alpha in zip(propagated_signals, arguments.alpha):
-        if arguments.GPU is not None: propagated_signal.to_device(Device.CPU)
+        if 'GPU' in arguments: propagated_signal.to_device(Device.CPU)
         with nc.Dataset(os.path.join(arguments.out, f'propagated_signal_alpha={alpha}.nc'), 'w') as propagated_signal_dataset:
             propagated_signal.save(propagated_signal_dataset, compression = arguments.compression, compression_level = arguments.compression_level)
