@@ -22,10 +22,6 @@ except:
 import netCDF4 as nc
 from obspy.clients.base import ClientHTTPException
 
-# Configuration
-logging.basicConfig(level = logging.DEBUG, format='%(asctime)s %(levelname)s %(message)s')
-logger = logging.getLogger()
-
 if __name__ == '__main__':
     # Load command line flags
     parser = argparse.ArgumentParser(
@@ -44,10 +40,15 @@ if __name__ == '__main__':
     parser.add_argument("--fibre", help = "File path from the current working directory where to save/load fibre realisations. If not defined, don't save or load fibre realisations from disk.", type = str, required = False)
     parser.add_argument("--make-fibre", help = "If the directory to --fibre doesn't exist, and the --make-fibre flag is passed, create a new directory to --fibre if necessary.", type = bool, action = argparse.BooleanOptionalAction, default = False, required = False)
     parser.add_argument("--overwrite-fibre", help = "If --fibre exists, delete it and rebuild it from scratch.", type = bool, action = argparse.BooleanOptionalAction, default = False, required = False)
-    parser.add_argument("--GPU", help = "Index of the CUDA-enabled GPU to use. Leave out to run on CPU. Requires the CUDA version of quakefibre to be installed (see README.md).", type = int, required = False)
+    parser.add_argument("--GPU", help = "Index of the CUDA-enabled GPU to use. Leave out to run on CPU. Requires the CUDA version of quakefibre to be installed (see README.md).", type = int, choices = [] if 'cupy' not in sys.modules else list(range(cp.cuda.runtime.getDeviceCount())), required = False)
     parser.add_argument("--compression", help = "Compression algorithm to use when saving results, the fibre, and/or perturbations; see https://unidata.github.io/netcdf4-python/#efficient-compression-of-netcdf-variables.", type = str, default = 'zlib', required = False)
-    parser.add_argument("--compression-level", help = "The level of compression from 0 (no compression, fast read/write, large file) to 9 (maximum compression, slow read/write, small file).", type = int, default = 4, required = False)
+    parser.add_argument("--compression-level", help = "The level of compression from 0 (no compression, fast read/write, large file) to 9 (maximum compression, slow read/write, small file).", type = int, choices = list(range(10)), default = 4, required = False)
+    parser.add_argument("--logging-level", help = "At which level to print logging messages.", type = str, choices = ["NOTSET", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"], default = "NOTSET", required = False)
     arguments = parser.parse_args()
+
+    # Configure logging
+    logging.basicConfig(level = getattr(logging, arguments.logging_level), format='%(asctime)s %(levelname)s %(message)s')
+    logger = logging.getLogger()
 
     logger.info("Reading parameters")
     # Verify validity of passed flags
