@@ -529,7 +529,7 @@ class Fibre(ABC):
         write_variable(dataset, 'differential_group_delays', self.differential_group_delays, {Dimension.STEPS.name: step_start, Dimension.REALISATIONS.name: realisation_start})
         create_attributes(dataset,
             ('correlation_length', 'beat_length', 'steps_per_span', 'chromatic_dispersion', 'nonlinearity', 'attenuation', 'noise_figure', 'polarisation_mode_dispersion', 'realisation_count', 'photoelasticity', 'modulus_model', 'span_count', 'span_length'),
-            (self.correlation_length, self.beat_length, self.steps_per_span, self.chromatic_dispersion, self.nonlinearity, self.attenuation_dB, self.noise_figure_dB, self.polarisation_mode_dispersion, self.realisation_count, self.photoelasticity, self.modulus_model.name, self.span_path.edge_count, np.mean(self.span_path.lengths[:-1])),
+            (self.correlation_length, self.beat_length, self.steps_per_span, self.chromatic_dispersion, self.nonlinearity, self.attenuation_dB, self.noise_figure_dB, self.polarisation_mode_dispersion, self.realisation_count, self.photoelasticity, self.modulus_model.name, self.span_path.edge_count, self._span_length)),
             allow_attribute_overwrite
         )
         dataset.sync()
