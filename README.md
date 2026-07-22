@@ -87,11 +87,11 @@ received_signal = fibre(transmitted_signal, perturbations = earthquake_perturbat
 If you use this work, please cite [\[4\]](#4):
 ```bibtex
 @inproceedings{Butler:In_Review:modelling_earthquake_fibres,
-    author={Butler, Rick M. and N\'u\~nez-Kasaneva, Jos\'e and Liga, Gabriele and Karlsson, Magnus and Alvarado, Alex and H\"ager, Christian},
+    author={Butler, Rick Maarten and N\'u\~nez-Kasaneva, Jos\'e and Liga, Gabriele and Karlsson, Magnus and Alvarado, Alex and H\"ager, Christian},
     title={End-to-End Modelling of Earthquake-Induced Polarisation Perturbations in Submarine Optical Fibres},
-    booktitle={},
-    year={In Review},
-    month={},
+    booktitle={European Conference on Optical Communication},
+    year={2026},
+    month={09},
     pages={},
     publisher={},
     doi={}
@@ -103,7 +103,7 @@ If you use this work, please cite [\[4\]](#4):
 <a name="1">\[1\]</a>
 L. Krischer, A. R. Hutko, M. van Driel, *et al.*,
 "On-demand custom broad-band synthetic seismograms,"
-*Seismol. Res. Lett.*,
+*Seismological Research Letters*,
 vol. 88, no. 4, pp. 1127&ndash;1140,
 Jul. 2017.
 DOI: [10.1785/0220160210](https://doi.org/10.1785/0220160210)
@@ -111,7 +111,7 @@ DOI: [10.1785/0220160210](https://doi.org/10.1785/0220160210)
 <a name="2">\[2\]</a>
 A. Mecozzi, M. Cantono, J. C. Castellanos, *et al.*,
 "Polarization Sensing using Submarine Optical Cables,"
-*Opt.*,
+*Optica*,
 vol. 8, no. 6, pp. 788&ndash;795,
 Jun. 2021.
 DOI: [10.1364/OPTICA.424307](https://doi.org/10.1364/OPTICA.424307)
@@ -119,7 +119,7 @@ DOI: [10.1364/OPTICA.424307](https://doi.org/10.1364/OPTICA.424307)
 <a name="3">\[3\]</a>
 H. Awad, F. Usmani, E. Virgillito, *et al.*,
 "Environmental surveillance through machine learning-empowered utilization of optical networks,"
-*Sens.*,
+*Sensors*,
 vol. 24, no. 10, pp. 3041,
 May 2024.
 DOI: [10.3390/s24103041](https://doi.org/10.3390/s24103041)
@@ -127,12 +127,13 @@ DOI: [10.3390/s24103041](https://doi.org/10.3390/s24103041)
 <a name="4">\[4\]</a>
 R. M. Butler, J. Núñez-Kasaneva, *et al.*,
 "End-to-End Modelling of Earthquake-Induced Polarisation Perturbations in Submarine Optical Fibres,"
-In Review.
+*European Conference on Optical Communication*,
+Sep. 2026.
 
 <a name="5">\[5\]</a>
 Z. Zhan, M. Cantono *et al.*,
 "Optical polarization-based seismic and water wave sensing on transoceanic cables,"
-*Sci.*,
+*Science*,
 vol. 371, no. 6532, pp. 931&ndash;936,
 Feb. 2021.
 DOI: [10.1126/science.abe6648](https://doi.org/10.1126/science.abe6648)
