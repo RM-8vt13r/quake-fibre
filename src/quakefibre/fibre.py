@@ -83,7 +83,11 @@ class Fibre(ABC):
         self._chromatic_dispersion         = parameters.getfloat('FIBRE', 'chromatic_dispersion')
         self._nonlinearity                 = parameters.getfloat('FIBRE', 'nonlinearity')
         self._attenuation_dB               = parameters.getfloat('FIBRE', 'attenuation')
-        self._noise_figure_dB              = parameters.getfloat('FIBRE', 'noise_figure')
+        try:
+            self._noise_figure_dB          = parameters.getfloat('FIBRE', 'noise_figure')
+        except:
+            parameters.get('FIBRE', 'noise_figure').lower() == 'none', f"noise_figure must be a float or 'None', but was {parameters.get('FIBRE', 'noise_figure')}"
+            self._noise_figure_dB = None
         self._polarisation_mode_dispersion = parameters.getfloat('FIBRE', 'polarisation_mode_dispersion')
         self._realisation_count            = int(parameters.getfloat('FIBRE', 'realisation_count'))
         self._photoelasticity              = parameters.getfloat('FIBRE', 'photoelasticity')
@@ -255,8 +259,7 @@ class Fibre(ABC):
             if self.polarisation_mode_dispersion != 0.:
                 signal = self._finalise_birefringence(signal, *birefringence_quantities)
 
-            if step_gain_linear != 1.:
-                signal = self._apply_gain(signal, step_gain_linear, noise_figure_linear)
+            signal = self._apply_gain(signal, step_gain_linear, noise_figure_linear)
 
         return signal
 
@@ -477,18 +480,19 @@ class Fibre(ABC):
         return signal
 
     def _apply_gain(self, signal, gain_linear, noise_figure_linear):
-        noise_power_per_channel = noise_figure_linear * gain_linear * sp.constants.Planck * signal.carrier_frequency * signal.bandwidth / 2 / 2 # /2 to divide over polarisations, /2 to spread over perpendicular phases. Don't scale by sqrt(sample_count), because the fourier transforms used internally in Signal are orthonormal
-        # noise_power_per_channel = (noise_figure_linear * gain_linear - 1) * sp.constants.Planck * signal.carrier_frequency * signal.bandwidth / 2 / 2
-        
-        if signal.xp == np:
-            amplified_spontaneous_emission = np.sqrt(noise_power_per_channel) * (np.random.default_rng().normal(size = signal.shape) + 1j * np.random.default_rng().normal(size = signal.shape))
-        else:
-            amplified_spontaneous_emission = cp.sqrt(noise_power_per_channel) * (cp.random.normal(size = signal.shape) + 1j * cp.random.normal(size = signal.shape))
-        
-        # signal.samples += amplified_spontaneous_emission / 2
-        # signal.samples *= gain_linear
-        # signal.samples += amplified_spontaneous_emission / 2
-        signal.samples = signal.samples * gain_linear + amplified_spontaneous_emission
+        if gain_linear != 1:
+            signal.samples = signal.samples * gain_linear
+
+        if noise_figure_linear is not None:
+            noise_power_per_channel = noise_figure_linear * gain_linear * sp.constants.Planck * signal.carrier_frequency * signal.bandwidth / 2 / 2 # /2 to divide over polarisations, /2 to spread over perpendicular phases. Don't scale by sqrt(sample_count), because the fourier transforms used internally in Signal are orthonormal
+            # noise_power_per_channel = (noise_figure_linear * gain_linear - 1) * sp.constants.Planck * signal.carrier_frequency * signal.bandwidth / 2 / 2
+            
+            if signal.xp == np:
+                amplified_spontaneous_emission = np.sqrt(noise_power_per_channel) * (np.random.default_rng().normal(size = signal.shape) + 1j * np.random.default_rng().normal(size = signal.shape))
+            else:
+                amplified_spontaneous_emission = cp.sqrt(noise_power_per_channel) * (cp.random.normal(size = signal.shape) + 1j * cp.random.normal(size = signal.shape))
+    
+            signal.samples += amplified_spontaneous_emission
 
         return signal
 
@@ -529,7 +533,7 @@ class Fibre(ABC):
         write_variable(dataset, 'differential_group_delays', self.differential_group_delays, {Dimension.STEPS.name: step_start, Dimension.REALISATIONS.name: realisation_start})
         create_attributes(dataset,
             ('correlation_length', 'beat_length', 'steps_per_span', 'chromatic_dispersion', 'nonlinearity', 'attenuation', 'noise_figure', 'polarisation_mode_dispersion', 'realisation_count', 'photoelasticity', 'modulus_model', 'span_count', 'span_length'),
-            (self.correlation_length, self.beat_length, self.steps_per_span, self.chromatic_dispersion, self.nonlinearity, self.attenuation_dB, self.noise_figure_dB, self.polarisation_mode_dispersion, self.realisation_count, self.photoelasticity, self.modulus_model.name, self.span_path.edge_count, self._span_length)),
+            (self.correlation_length, self.beat_length, self.steps_per_span, self.chromatic_dispersion, self.nonlinearity, self.attenuation_dB, self.noise_figure_dB, self.polarisation_mode_dispersion, self.realisation_count, self.photoelasticity, self.modulus_model.name, self.span_path.edge_count, self._span_length),
             allow_attribute_overwrite
         )
         dataset.sync()
@@ -744,7 +748,7 @@ class Fibre(ABC):
         """
         [float] the amplifier noise figure in linear gain.
         """
-        return dB2linear(self.noise_figure_dB, Gain.POWER)
+        return dB2linear(self.noise_figure_dB, Gain.POWER) if self.noise_figure_dB is not None else None
 
     @noise_figure_linear.setter
     def noise_figure_linear(self):
